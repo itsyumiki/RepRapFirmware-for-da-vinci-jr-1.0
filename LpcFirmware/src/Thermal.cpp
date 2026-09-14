@@ -717,7 +717,8 @@ static void Command(const uint8_t* payload, size_t length) noexcept
 			}
 			return;
 		}
-		if (upperLimit >= 1000.0f || requestedTarget > upperLimit || requestedTarget < lowerLimit)
+		if (upperLimit >= 1000.0f || requestedTarget > upperLimit
+			|| (lowerLimit > AbsoluteZero + 1.0f && requestedTarget < lowerLimit))
 		{
 			SetFault(LpcProtocol::ThermalError::controlFault);
 			return;
