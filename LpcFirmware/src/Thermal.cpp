@@ -112,6 +112,16 @@ static float Clamp(float value, float low, float high) noexcept
 	return (value < low) ? low : (value > high) ? high : value;
 }
 
+static bool LowerLimitEnabled(float lower) noexcept
+{
+	return lower > AbsoluteZero + 1.0f;
+}
+
+static bool TargetWithinLimits(float target, float upper, float lower) noexcept
+{
+	return upper < 1000.0f && target <= upper
+		&& (!LowerLimitEnabled(lower) || target >= lower);
+}
 static bool ModelReady(const Model& candidate) noexcept
 {
 	return isfinite(candidate.heatingRate) && candidate.heatingRate > 0.0f
@@ -330,7 +340,7 @@ static void Control() noexcept
 		SetFault(LpcProtocol::ThermalError::overTemperature);
 		return;
 	}
-	if (lowerLimit > AbsoluteZero + 1.0f && temperature < lowerLimit)
+	if (LowerLimitEnabled(lowerLimit) && temperature < lowerLimit)
 	{
 		SetFault(LpcProtocol::ThermalError::underTemperature);
 		return;
@@ -717,7 +727,7 @@ static void Command(const uint8_t* payload, size_t length) noexcept
 			}
 			return;
 		}
-		if (upperLimit >= 1000.0f || requestedTarget > upperLimit || requestedTarget < lowerLimit)
+		if (!TargetWithinLimits(requestedTarget, upperLimit, lowerLimit))
 		{
 			SetFault(LpcProtocol::ThermalError::controlFault);
 			return;

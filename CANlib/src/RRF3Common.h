@@ -68,7 +68,11 @@ constexpr float BadLowTemperature = -10.0;				// Celsius
 constexpr float DefaultHotEndTemperatureLimit = 285.0;	// Celsius - E3D say to tighten the hot end at 285C
 constexpr float DefaultBedTemperatureLimit = 125.0;		// Celsius
 constexpr float DefaultHotEndFanTemperature = 45.0;		// Temperature at which a thermostatic hot end fan comes on
+#if defined(DA_VINCI_JR)
+constexpr float ThermostatHysteresis = 5.0;				// Stock Da Vinci Jr fans switch on above 45C and off below 40C
+#else
 constexpr float ThermostatHysteresis = 1.0;				// How much hysteresis we use to prevent noise turning fans on/off too often
+#endif
 constexpr float BadErrorTemperature = 2000.0;			// Must exceed any reasonable temperature limit including DefaultHotEndTemperatureLimit
 constexpr float FanFeedForwardMultiplier = 0.7;			// how much we under- or over-compensate feedforward to allow for heat reservoirs during tuning
 
