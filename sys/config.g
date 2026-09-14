@@ -37,12 +37,14 @@ M574 Z1 S1 P"zstop"
 ; Verified LPC1115 peripherals only; NFC is intentionally not exposed.
 ; PIO1_0 = hotend NTC, PIO0_9 = heater, PIO2_5 = hotend fan, PIO1_10 = reflow fan.
 ; The hotend NTC is 100K, connected from the ADC node to ground with the MCU side
-; pulled up. B4267/R4700 are placeholders retained from the prior config and are
-; NOT yet verified against real hardware -- R4700 in particular does not match a
-; curve fit against the recovered stock calibration data (which implies a pullup
-; closer to 800ohm). Treat these as unmeasured until someone verifies them
-; directly against the board.
-M308 S0 P"lpc.ntc" Y"thermistor" T100000 B4267 C0 R4700
+; pulled up. Uses RRF's standard Steinhart-Hart/beta thermistor path (both here
+; and on the LPC side, which mirrors these parameters for its own local safety
+; checks) rather than a custom lookup table. B4267/R820 are a curve fit against
+; the recovered stock ROM calibration table (RMSE ~0.8C-equivalent, worse only
+; at the temperature extremes) -- NOT yet a direct multimeter measurement of the
+; physical pullup. Treat R820 as a good working estimate until someone verifies
+; it directly against the board.
+M308 S0 P"lpc.ntc" Y"thermistor" T100000 B4267 C0 R820
 M950 H0 C"lpc.heater" T0 Q250
 M143 H0 S265
 
