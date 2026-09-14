@@ -13,7 +13,7 @@ lpc_vectors:
 	.word 0
 	.word 0
 	.word 0
-	.word 0
+	.word __vector_checksum
 	.word 0
 	.word 0
 	.word 0
@@ -26,6 +26,12 @@ lpc_vectors:
 	.word Default_Handler
 	.endr
 .size lpc_vectors, . - lpc_vectors
+
+// Keep NXP Code Read Protection disabled. The LPC11xx boot ROM interprets the
+// word at flash offset 0x2FC; reserving it prevents ordinary code from ever
+// coinciding with a CRP magic value and locking out UART ISP/SWD updates.
+.section .crp,"a",%progbits
+.word 0xFFFFFFFF
 
 .section .text.Reset_Handler,"ax",%progbits
 .thumb_func
