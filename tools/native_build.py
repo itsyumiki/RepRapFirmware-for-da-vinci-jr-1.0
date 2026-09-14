@@ -331,6 +331,10 @@ def crc_appender() -> Path:
             "x86_64",
         ): "RepRapFirmware/Tools/CrcAppender/linux-x86_64/CrcAppender",
         (
+            "Linux",
+            "aarch64",
+        ): "RepRapFirmware/Tools/CrcAppender/linux-aarch64/CrcAppender",
+        (
             "Darwin",
             "x86_64",
         ): "RepRapFirmware/Tools/CrcAppender/macos-x86_64/CrcAppender",
