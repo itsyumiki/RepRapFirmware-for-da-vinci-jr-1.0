@@ -11,6 +11,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_DIR = ROOT / "build" / "LpcFirmware"
+FLASH_SIZE = 64 * 1024
+RAM_TOP = 0x10002000
+CRP_OFFSET = 0x2FC
+CRP_DISABLED = 0xFFFFFFFF
 CPU_FLAGS = ("-mcpu=cortex-m0", "-mthumb")
 COMMON_FLAGS = (
     "-Os",
@@ -77,14 +81,26 @@ def compile_source(source: Path) -> Path:
     return obj
 
 
-def patch_vector_checksum(binary: Path) -> None:
-    data = bytearray(binary.read_bytes())
-    if len(data) < 32:
-        raise RuntimeError("LPC1115 image is too small to contain a vector table")
-    words = struct.unpack_from("<8I", data)
-    checksum = (-sum(words[:7])) & 0xFFFFFFFF
-    struct.pack_into("<I", data, 28, checksum)
-    binary.write_bytes(data)
+def validate_image(binary: Path) -> None:
+    data = binary.read_bytes()
+    if len(data) < CRP_OFFSET + 4:
+        raise RuntimeError("LPC1115 image is too small to contain the vector and CRP words")
+    if len(data) > FLASH_SIZE:
+        raise RuntimeError(f"LPC1115 image exceeds {FLASH_SIZE} bytes of flash")
+
+    vectors = struct.unpack_from("<8I", data)
+    if vectors[0] != RAM_TOP:
+        raise RuntimeError(f"LPC1115 initial stack pointer is 0x{vectors[0]:08X}, expected 0x{RAM_TOP:08X}")
+    reset_vector = vectors[1]
+    reset_target = reset_vector & ~1
+    if (reset_vector & 1) == 0 or reset_target >= len(data):
+        raise RuntimeError(f"LPC1115 reset vector 0x{reset_vector:08X} is not a valid Thumb target in the image")
+    if sum(vectors) & 0xFFFFFFFF:
+        raise RuntimeError("LPC1115 vector checksum is invalid")
+
+    crp_word = struct.unpack_from("<I", data, CRP_OFFSET)[0]
+    if crp_word != CRP_DISABLED:
+        raise RuntimeError(f"LPC1115 CRP word is 0x{crp_word:08X}, expected 0x{CRP_DISABLED:08X}")
 
 
 def build() -> None:
@@ -112,7 +128,7 @@ def build() -> None:
         ]
     )
     run([tool("objcopy"), "-O", "binary", str(elf), str(binary)])
-    patch_vector_checksum(binary)
+    validate_image(binary)
     run([tool("size"), str(elf)])
     print(f"LPC firmware: {binary.relative_to(ROOT)}", flush=True)
 
