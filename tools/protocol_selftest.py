@@ -60,6 +60,10 @@ int main()
     RoundTrip(MessageType::thermalStatus, payload, 8);
     RoundTrip(MessageType::thermistorConfig, payload, MaxPayload);
 
+     RoundTrip(MessageType::heaterTuningCommand, payload, 8);
+     RoundTrip(MessageType::heaterTuningReportA, payload, 14);
+     RoundTrip(MessageType::heaterTuningReportB, payload, 16);
+
     uint8_t encoded[MaxEncodedFrame] = {};
     size_t length = Encode(MessageType::gpioWrite, payload, 2, encoded);
     assert(length != 0);

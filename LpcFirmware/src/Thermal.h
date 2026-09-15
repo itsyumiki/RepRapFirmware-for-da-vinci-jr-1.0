@@ -16,6 +16,10 @@ void HandleFrame(const LpcProtocol::Frame& frame) noexcept;
 void Spin() noexcept;
 bool TakeStatus(uint8_t* payload, size_t& length) noexcept;
 
+// Returns true once per completed tuning cycle (immediately clearing the pending state), filling in
+// both payloads for the caller to send as heaterTuningReportA followed by heaterTuningReportB.
+bool TakeTuningReport(uint8_t* payloadA, size_t& lengthA, uint8_t* payloadB, size_t& lengthB) noexcept;
+
 }
 
 #endif

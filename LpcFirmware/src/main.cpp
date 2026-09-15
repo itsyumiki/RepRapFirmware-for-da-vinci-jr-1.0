@@ -106,6 +106,16 @@ extern "C" int main() noexcept
 			{
 				Send(LpcProtocol::MessageType::thermalStatus, thermalPayload, static_cast<uint8_t>(thermalLength));
 			}
+
+			uint8_t tuningPayloadA[LpcProtocol::MaxPayload];
+			uint8_t tuningPayloadB[LpcProtocol::MaxPayload];
+			size_t tuningLengthA;
+			size_t tuningLengthB;
+			if (Thermal::TakeTuningReport(tuningPayloadA, tuningLengthA, tuningPayloadB, tuningLengthB))
+			{
+				Send(LpcProtocol::MessageType::heaterTuningReportA, tuningPayloadA, static_cast<uint8_t>(tuningLengthA));
+				Send(LpcProtocol::MessageType::heaterTuningReportB, tuningPayloadB, static_cast<uint8_t>(tuningLengthB));
+			}
 		}
 	}
 }

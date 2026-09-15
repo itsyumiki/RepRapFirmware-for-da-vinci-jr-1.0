@@ -90,6 +90,38 @@ static volatile LpcProtocol::HeaterState state;
 static volatile LpcProtocol::ThermalError error;
 static volatile bool linkTimeoutLatched;
 
+// Tuning state. Modelled on RepRapFirmware's LocalHeater::DoTuningStep() ExpansionMode branches, which
+// this firmware plays the same role as: hold a fixed PWM, find the peak/trough after each threshold
+// crossing (using peakTempDrop to detect that the peak has actually passed rather than reacting to noise),
+// and report one heating half-cycle and one cooling half-cycle as a single completed "cycle".
+enum class TuningPhase : uint8_t
+{
+	notTuning = 0,
+	heatingToHigh,		// fixed PWM on, waiting to reach tuningHighTemp
+	awaitingPeak,		// PWM off, waiting for temperature to peak and then drop to tuningLowTemp
+	awaitingTrough		// PWM on, waiting for temperature to trough and then rise to tuningHighTemp
+};
+
+constexpr unsigned int MaxTuningCycles = 5;
+
+static TuningPhase tuningPhase = TuningPhase::notTuning;
+static float tuningPwm;
+static float tuningLowTemp;
+static float tuningHighTemp;
+static float tuningPeakTempDrop;
+static float tuningExtremeTemp;			// running peak (awaitingPeak) or trough (awaitingTrough) temperature
+static uint32_t tuningExtremeTime;			// time at which tuningExtremeTemp was last updated
+static uint32_t tuningAfterExtremeTime;		// time confirming the extreme has passed (peakTempDrop satisfied)
+static uint32_t tuningPhaseStartTime;			// when the current on/off half-cycle began
+static uint16_t tuningCyclesDone;
+static uint32_t tuningLastTon;
+static uint32_t tuningLastToff;
+static uint32_t tuningLastDLow;
+static uint32_t tuningLastDHigh;
+static float tuningLastHeatingRate;
+static float tuningLastCoolingRate;
+static uint16_t tuningReportedCycle;			// cyclesDone value already sent to the host; used to detect a new report is due
+
 static float ReadFloat(const uint8_t* data) noexcept
 {
 	float value;
@@ -105,6 +137,25 @@ static int16_t ReadI16(const uint8_t* data) noexcept
 static uint16_t ReadU16(const uint8_t* data) noexcept
 {
 	return static_cast<uint16_t>(data[0]) | (static_cast<uint16_t>(data[1]) << 8);
+}
+
+static void PutU16(uint8_t* destination, uint16_t value) noexcept
+{
+	destination[0] = static_cast<uint8_t>(value);
+	destination[1] = static_cast<uint8_t>(value >> 8);
+}
+
+static void PutU32(uint8_t* destination, uint32_t value) noexcept
+{
+	destination[0] = static_cast<uint8_t>(value);
+	destination[1] = static_cast<uint8_t>(value >> 8);
+	destination[2] = static_cast<uint8_t>(value >> 16);
+	destination[3] = static_cast<uint8_t>(value >> 24);
+}
+
+static void PutFloat(uint8_t* destination, float value) noexcept
+{
+	memcpy(destination, &value, sizeof(value));
 }
 
 static float Clamp(float value, float low, float high) noexcept
@@ -272,6 +323,148 @@ static Pid PidForTarget(bool loadMode, float target) noexcept
 	return { kP, recipTi, model.deadTime * 0.7f };
 }
 
+// Cancel tuning (if active) and put the heater into a safe off state. Never raises a fault:
+// tuning cancellation, whatever the reason, must always be recoverable without M562.
+static void StopTuning() noexcept
+{
+	tuningPhase = TuningPhase::notTuning;
+	ApplyHeater(0.0f);
+	lastPwm = 0.0f;
+	if (state != LpcProtocol::HeaterState::fault)
+	{
+		state = LpcProtocol::HeaterState::off;
+	}
+	statusDirty = true;
+}
+
+// Start relay tuning: hold tuningPwm until temperature reaches highTemp, then off until it falls back
+// to lowTemp, repeating for MaxTuningCycles cycles. Mirrors LocalHeater::DoTuningStep()'s ExpansionMode
+// branches (tuning1/tuning2/tuning3), which this firmware plays the same conceptual role as.
+static bool StartTuning(float pwm, float lowTemp, float highTemp, float peakTempDrop) noexcept
+{
+	if (!LinkAlive() || !thermistorConfigured || !heaterConfigured || state == LpcProtocol::HeaterState::fault || !SampleTemperature())
+	{
+		return false;
+	}
+	if (highTemp <= lowTemp || highTemp >= upperLimit || (lowerLimit > AbsoluteZero + 1.0f && lowTemp < lowerLimit))
+	{
+		return false;
+	}
+	tuningPwm = Clamp(pwm, 0.0f, 1.0f);
+	tuningLowTemp = lowTemp;
+	tuningHighTemp = highTemp;
+	tuningPeakTempDrop = (peakTempDrop > 0.0f) ? peakTempDrop : 2.0f;
+	tuningCyclesDone = 0;
+	tuningReportedCycle = 0;
+	integral = 0.0f;
+	extrusionPwmBoost = 0.0f;
+	extrusionTemperatureBoost = 0.0f;
+	lastExtrusionTemperatureBoost = 0.0f;
+	excursionFaultMillis = 0;
+	heatingFaultMillis = 0;
+	targetTemperature = tuningHighTemp;
+	state = LpcProtocol::HeaterState::heating;			// keeps Active() true and gives the host a sane wire state
+	tuningPhase = TuningPhase::heatingToHigh;
+	tuningPhaseStartTime = Millis();
+	lastPwm = tuningPwm;
+	statusDirty = true;
+	return true;
+}
+
+static void DoTuningStep(uint32_t now) noexcept
+{
+	switch (tuningPhase)
+	{
+	case TuningPhase::heatingToHigh:
+		ApplyHeater(tuningPwm);
+		lastPwm = tuningPwm;
+		if (temperature >= tuningHighTemp)
+		{
+			tuningExtremeTemp = temperature;
+			tuningExtremeTime = tuningAfterExtremeTime = now;
+			tuningPhaseStartTime = now;					// lastOffTime equivalent
+			tuningPhase = TuningPhase::awaitingPeak;
+			ApplyHeater(0.0f);
+			lastPwm = 0.0f;
+		}
+		break;
+
+	case TuningPhase::awaitingPeak:
+		ApplyHeater(0.0f);
+		lastPwm = 0.0f;
+		if (temperature >= tuningExtremeTemp)
+		{
+			tuningExtremeTemp = temperature;
+			tuningExtremeTime = tuningAfterExtremeTime = now;
+		}
+		else if (temperature < tuningLowTemp)
+		{
+			// Peak has passed and we have now reached the low threshold: one heating->cooling half-cycle is complete.
+			tuningLastDHigh = tuningExtremeTime - tuningPhaseStartTime;
+			tuningLastToff = now - tuningPhaseStartTime;
+			const uint32_t coolingInterval = now - tuningAfterExtremeTime;
+			tuningLastCoolingRate = (coolingInterval != 0)
+				? (tuningExtremeTemp - temperature) * 1000.0f / static_cast<float>(coolingInterval)
+				: 0.0f;
+			tuningExtremeTemp = temperature;
+			tuningExtremeTime = tuningAfterExtremeTime = now;
+			tuningPhaseStartTime = now;					// lastOnTime equivalent
+			tuningPhase = TuningPhase::awaitingTrough;
+			ApplyHeater(tuningPwm);
+			lastPwm = tuningPwm;
+		}
+		else if (tuningAfterExtremeTime == tuningExtremeTime && tuningHighTemp - temperature >= tuningPeakTempDrop)
+		{
+			tuningAfterExtremeTime = now;
+		}
+		break;
+
+	case TuningPhase::awaitingTrough:
+		ApplyHeater(tuningPwm);
+		lastPwm = tuningPwm;
+		if (temperature <= tuningExtremeTemp)
+		{
+			tuningExtremeTemp = temperature;
+			tuningExtremeTime = tuningAfterExtremeTime = now;
+		}
+		else if (temperature >= tuningHighTemp)
+		{
+			// Trough has passed and we are back at the high threshold: the cooling->heating half-cycle,
+			// and therefore the whole cycle, is complete.
+			tuningLastDLow = tuningExtremeTime - tuningPhaseStartTime;
+			tuningLastTon = now - tuningPhaseStartTime;
+			const uint32_t heatingInterval = now - tuningAfterExtremeTime;
+			tuningLastHeatingRate = (heatingInterval != 0)
+				? (temperature - tuningExtremeTemp) * 1000.0f / static_cast<float>(heatingInterval)
+				: 0.0f;
+			++tuningCyclesDone;
+			tuningExtremeTemp = temperature;
+			tuningExtremeTime = tuningAfterExtremeTime = now;
+			tuningPhaseStartTime = now;					// lastOffTime equivalent
+			ApplyHeater(0.0f);
+			lastPwm = 0.0f;
+			if (tuningCyclesDone >= MaxTuningCycles)
+			{
+				StopTuning();
+			}
+			else
+			{
+				tuningPhase = TuningPhase::awaitingPeak;
+			}
+		}
+		else if (tuningAfterExtremeTime == tuningExtremeTime && temperature - tuningLowTemp >= tuningPeakTempDrop)
+		{
+			tuningAfterExtremeTime = now;
+		}
+		break;
+
+	default:
+		break;
+	}
+	averagePwm = averagePwm * 0.95f + lastPwm * 0.05f;
+	statusDirty = true;
+}
+
 static void Control() noexcept
 {
 	const bool faultWasLatched = state == LpcProtocol::HeaterState::fault;
@@ -333,6 +526,12 @@ static void Control() noexcept
 	if (lowerLimit > AbsoluteZero + 1.0f && temperature < lowerLimit)
 	{
 		SetFault(LpcProtocol::ThermalError::underTemperature);
+		return;
+	}
+
+	if (tuningPhase != TuningPhase::notTuning)
+	{
+		DoTuningStep(Millis());
 		return;
 	}
 
@@ -692,6 +891,7 @@ static void Command(const uint8_t* payload, size_t length) noexcept
 	switch (command)
 	{
 	case LpcProtocol::HeaterCommand::off:
+		tuningPhase = TuningPhase::notTuning;
 		ApplyHeater(0.0f);
 		if (state != LpcProtocol::HeaterState::fault)
 		{
@@ -729,6 +929,7 @@ static void Command(const uint8_t* payload, size_t length) noexcept
 		break;
 
 	case LpcProtocol::HeaterCommand::suspend:
+		tuningPhase = TuningPhase::notTuning;
 		ApplyHeater(0.0f);
 		if (state != LpcProtocol::HeaterState::fault)
 		{
@@ -740,6 +941,7 @@ static void Command(const uint8_t* payload, size_t length) noexcept
 	case LpcProtocol::HeaterCommand::resetFault:
 		if (LinkAlive() && SampleTemperature())
 		{
+			tuningPhase = TuningPhase::notTuning;
 			linkTimeoutLatched = false;
 			ApplyHeater(0.0f);
 			state = LpcProtocol::HeaterState::off;
@@ -789,6 +991,29 @@ static void ConfigureFeedForward(const uint8_t* payload, size_t length) noexcept
 	extrusionTemperatureBoost = newExtrusionTemperatureBoost;
 }
 
+static void ConfigureHeaterTuning(const uint8_t* payload, size_t length) noexcept
+{
+	if (length != 8)
+	{
+		return;
+	}
+	if (payload[0] == 0)
+	{
+		StopTuning();
+		return;
+	}
+	const float pwm = static_cast<float>(payload[1]) * (1.0f / 255.0f);
+	const float lowTemp = static_cast<float>(ReadI16(payload + 2)) * 0.01f;
+	const float highTemp = static_cast<float>(ReadI16(payload + 4)) * 0.01f;
+	const float peakTempDrop = static_cast<float>(ReadU16(payload + 6)) * 0.01f;
+	if (!StartTuning(pwm, lowTemp, highTemp, peakTempDrop))
+	{
+		SetFault(!LinkAlive() ? LpcProtocol::ThermalError::linkTimeout
+			: !thermistorConfigured || !heaterConfigured ? LpcProtocol::ThermalError::notConfigured
+			: LpcProtocol::ThermalError::controlFault);
+	}
+}
+
 void HandleFrame(const LpcProtocol::Frame& frame) noexcept
 {
 	switch (frame.type)
@@ -813,6 +1038,9 @@ void HandleFrame(const LpcProtocol::Frame& frame) noexcept
 		break;
 	case LpcProtocol::MessageType::heaterFeedForward:
 		ConfigureFeedForward(frame.payload, frame.length);
+		break;
+	case LpcProtocol::MessageType::heaterTuningCommand:
+		ConfigureHeaterTuning(frame.payload, frame.length);
 		break;
 	default:
 		break;
@@ -848,6 +1076,28 @@ bool TakeStatus(uint8_t* payload, size_t& length) noexcept
 	payload[6] = static_cast<uint8_t>(state);
 	payload[7] = static_cast<uint8_t>(error);
 	length = 8;
+	return true;
+}
+
+bool TakeTuningReport(uint8_t* payloadA, size_t& lengthA, uint8_t* payloadB, size_t& lengthB) noexcept
+{
+	if (tuningCyclesDone == tuningReportedCycle)
+	{
+		return false;
+	}
+	tuningReportedCycle = tuningCyclesDone;
+
+	PutU16(payloadA, tuningCyclesDone);
+	PutU32(payloadA + 2, tuningLastTon);
+	PutU32(payloadA + 6, tuningLastToff);
+	PutU32(payloadA + 10, tuningLastDLow);
+	lengthA = 14;
+
+	PutU32(payloadB, tuningLastDHigh);
+	PutFloat(payloadB + 4, tuningLastHeatingRate);
+	PutFloat(payloadB + 8, tuningLastCoolingRate);
+	PutFloat(payloadB + 12, 0.0f);			// no voltage monitor on this board
+	lengthB = 16;
 	return true;
 }
 

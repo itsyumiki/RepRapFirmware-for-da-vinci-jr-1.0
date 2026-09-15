@@ -18,6 +18,18 @@ struct ThermalStatus
 	LpcProtocol::ThermalError error;
 };
 
+struct TuningReport
+{
+	uint16_t cyclesDone;
+	uint32_t ton;
+	uint32_t toff;
+	uint32_t dlow;
+	uint32_t dhigh;
+	float heatingRate;
+	float coolingRate;
+	float voltage;
+};
+
 void Init() noexcept;
 void Spin() noexcept;
 bool IsOnline() noexcept;
@@ -37,6 +49,13 @@ void ConfigureHeater(uint16_t frequency, float upperLimit, float lowerLimit, flo
 void CommandHeater(LpcProtocol::HeaterCommand command, float targetTemperature) noexcept;
 void ConfigureHeaterFeedForward(float fanPwm, float extrusionPwmBoost, float extrusionTemperatureBoost) noexcept;
 bool GetThermalStatus(ThermalStatus& status) noexcept;
+
+// Send a heaterTuningCommand frame. 'on' == false cancels tuning and returns the heater to the off state.
+void StartHeaterTuning(bool on, float pwm, float lowTemp, float highTemp, float peakTempDrop) noexcept;
+
+// Returns true once for each newly-completed tuning cycle (i.e. once both heaterTuningReportA and
+// heaterTuningReportB for that cycle have been received), and clears the pending flag on read.
+bool GetTuningReport(TuningReport& report) noexcept;
 
 }
 

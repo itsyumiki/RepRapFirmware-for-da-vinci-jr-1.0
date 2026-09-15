@@ -41,8 +41,33 @@ enum class MessageType : uint8_t
 	thermalStatus = 13,
 	heaterFeedForward = 14,
 	configurationReset = 15,
-	configurationComplete = 16
+	configurationComplete = 16,
+	heaterTuningCommand = 17,
+	heaterTuningReportA = 18,
+	heaterTuningReportB = 19
 };
+
+// heaterTuningCommand payload (8 bytes), host -> LPC. Starts or cancels M303 autotune on the hotend heater.
+// There is only ever one LPC heater, so no heater number is carried.
+//   [0]    on:            1 to start tuning, 0 to cancel and return to the off state
+//   [1]    pwm:           tuning PWM as a fraction of full scale packed into a byte (0-255 -> 0.0-1.0)
+//   [2:3]  lowTemp:       hysteresis low temperature, signed centidegrees C (int16, little-endian)
+//   [4:5]  highTemp:      tuning target temperature, signed centidegrees C (int16, little-endian)
+//   [6:7]  peakTempDrop:  temperature drop after peak that ends the heating phase, unsigned centidegrees C (uint16, little-endian)
+
+// heaterTuningReportA payload (14 bytes), LPC -> host. First half of one completed tuning cycle's data.
+// Always immediately followed by heaterTuningReportB for the same cycle; the two are never reordered
+// or interleaved with anything else on this point-to-point link, so no sequence tag is needed.
+//   [0:1]   cyclesDone:  number of tuning cycles completed so far (uint16, little-endian)
+//   [2:5]   ton:         time the heater was on during this cycle, milliseconds (uint32, little-endian)
+//   [6:9]   toff:        time the heater was off during this cycle, milliseconds (uint32, little-endian)
+//   [10:13] dlow:        time spent below the low threshold, milliseconds (uint32, little-endian)
+
+// heaterTuningReportB payload (16 bytes), LPC -> host. Second half of one completed tuning cycle's data.
+//   [0:3]   dhigh:        time spent above the high threshold, milliseconds (uint32, little-endian)
+//   [4:7]   heatingRate:  measured heating rate, degrees C/sec (float, little-endian)
+//   [8:11]  coolingRate:  measured cooling rate, degrees C/sec (float, little-endian)
+//   [12:15] voltage:      supply voltage sample during this cycle, volts (float, little-endian). Zero if unavailable.
 
 enum class GpioMode : uint8_t
 {
