@@ -542,8 +542,12 @@ void WiFiInterface::Activate() noexcept
 		bufferIn = new MessageBufferIn;
 #endif
 
-#if WIFI_USES_UART && (HAS_MASS_STORAGE || HAS_EMBEDDED_FILES)
+#if (WIFI_USES_UART || WIFI_USES_SOFTWARE_UART) && (HAS_MASS_STORAGE || HAS_EMBEDDED_FILES)
+# if WIFI_USES_SOFTWARE_UART
+		uploader = new WifiFirmwareUploader(GetWiFiUploadSerial(), *this);
+# else
 		uploader = new WifiFirmwareUploader(SERIAL_WIFI_DEVICE, *this);
+# endif
 #endif
 		if (requestedMode != WiFiState::disabled)
 		{
@@ -2611,6 +2615,9 @@ void WiFiInterface::ResetWiFi() noexcept
 // 0		0		1		SD card boot (not used in on Duet)
 void WiFiInterface::ResetWiFiForUpload(bool external) noexcept
 {
+#if WIFI_USES_SOFTWARE_UART
+	EndWiFiUploadSerial();
+#endif
 #if WIFI_USES_UART
 	if (serialRunning)
 	{
@@ -2644,7 +2651,9 @@ void WiFiInterface::ResetWiFiForUpload(bool external) noexcept
 	// Make sure it has time to reset - no idea how long it needs, but 50ms should be plenty
 	delay(50);
 
-#if WIFI_USES_UART
+#if WIFI_USES_SOFTWARE_UART
+	PrepareWiFiUploadSerial(external);
+#elif WIFI_USES_UART
 	if (external)
 	{
 #if !defined(DUET3MINI)
@@ -2671,6 +2680,24 @@ void WiFiInterface::ResetWiFiForUpload(bool external) noexcept
 
 	// Take the ESP8266 out of power down
 	digitalWrite(EspEnablePin, true);
+}
+
+void WiFiInterface::BeginFirmwareUploadSerial(uint32_t baud) noexcept
+{
+#if WIFI_USES_SOFTWARE_UART
+	BeginWiFiUploadSerial(baud);
+#else
+	SERIAL_WIFI_DEVICE.begin(baud);
+#endif
+}
+
+void WiFiInterface::EndFirmwareUploadSerial() noexcept
+{
+#if WIFI_USES_SOFTWARE_UART
+	EndWiFiUploadSerial();
+#else
+	SERIAL_WIFI_DEVICE.end();
+#endif
 }
 
 #endif	// HAS_WIFI_NETWORKING

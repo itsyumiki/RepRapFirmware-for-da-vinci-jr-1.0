@@ -21,6 +21,7 @@ constexpr uint32_t IAP_IMAGE_START = 0x20018000;
 #define HAS_LWIP_NETWORKING     0
 #define HAS_WIFI_NETWORKING     1
 #define WIFI_USES_UART          0
+#define WIFI_USES_SOFTWARE_UART 1
 #define WIFI_USES_GPIO_CS       1
 #define WIFI_FIRMWARE_FILE      "DuetWiFiServer.bin"
 #define HAS_W5500_NETWORKING    0
@@ -109,6 +110,8 @@ constexpr Pin EspEnablePin = PortEPin(3);
 constexpr Pin EspDataReadyPin = PortDPin(24);
 constexpr Pin SamTfrReadyPin = PortBPin(14);
 constexpr Pin SamCsPin = PortBPin(2);
+constexpr Pin EspUartTxPin = PortCPin(24);       // SAM TX -> ESP RXD0
+constexpr Pin EspUartRxPin = PortDPin(29);       // SAM RX <- ESP TXD0
 
 constexpr DmaChannel DmacChanWiFiTx = 1;
 constexpr DmaChannel DmacChanWiFiRx = 2;
@@ -257,7 +260,7 @@ constexpr PinDescription PinTable[] =
 	PIN_NONE,		// PC21
 	PIN_NONE,		// PC22 Y step
 	PIN_NONE,		// PC23 X step
-	PIN_NONE,		// PC24 ESP UART RXD (UART unsupported)
+	PIN_NONE,		// PC24 SAM software UART TX -> ESP RXD0
 	PIN_NONE,		// PC25
 	PIN_NONE,		// PC26
 	PIN_NONE,		// PC27
@@ -296,7 +299,7 @@ constexpr PinDescription PinTable[] =
 	PIN_NONE,		// PD26
 	PIN_NONE,		// PD27
 	PIN_NONE,		// PD28
-	PIN_NONE,		// PD29 ESP UART TXD (UART unsupported)
+	PIN_NONE,		// PD29 SAM software UART RX <- ESP TXD0
 	PIN_READ("!button.home"),	// PD30 SW6 Home button, active low
 	PIN_NONE,		// PD31
 

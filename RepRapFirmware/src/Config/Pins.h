@@ -162,6 +162,9 @@
 # if !defined(WIFI_USES_UART)
 #  define WIFI_USES_UART		1
 # endif
+# if !defined(WIFI_USES_SOFTWARE_UART)
+#  define WIFI_USES_SOFTWARE_UART	0
+# endif
 # if !defined(WIFI_USES_GPIO_CS)
 #  define WIFI_USES_GPIO_CS	0
 # endif
