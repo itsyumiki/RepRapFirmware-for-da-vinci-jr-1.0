@@ -60,6 +60,13 @@ namespace FirmwareUpdater
 				reply.copy("Invalid combination of firmware update modules");
 				return GCodeResult::error;
 			}
+#if !WIFI_USES_UART
+			if (moduleMap.IsBitSet(WifiFirmwareModule))
+			{
+				reply.copy("WiFi firmware upload is not supported on this board");
+				return GCodeResult::error;
+			}
+#endif
 			if (moduleMap.IsBitSet(WifiFirmwareModule))
 			{
 				String<MaxFilenameLength> location;
