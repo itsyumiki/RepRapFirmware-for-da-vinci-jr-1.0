@@ -2252,8 +2252,6 @@ int32_t WiFiInterface::SendCommand(NetworkCommand cmd, SocketNumber socketNum, u
 		memcpy(bufferOut->data, dataOut, dataOutLength);
 	}
 	bufferIn->hdr.formatVersion = InvalidFormatVersion;
-	espWaitingTask = TaskBase::GetCallerTaskHandle();
-	transferPending = true;
 
 	Cache::FlushBeforeDMASend(bufferOut, (dataOut != nullptr) ? sizeof(bufferOut->hdr) + dataOutLength : sizeof(bufferOut->hdr));
 
@@ -2279,8 +2277,6 @@ int32_t WiFiInterface::SendCommand(NetworkCommand cmd, SocketNumber socketNum, u
 	// provides the real transaction boundary and its rising edge completes DMA.
 	if (!SelectSpiSlave())
 	{
-		transferPending = false;
-		espWaitingTask = nullptr;
 		spi_dma_disable();
 		DisableSpi();
 		++responseTimeoutCount;
@@ -2294,6 +2290,8 @@ int32_t WiFiInterface::SendCommand(NetworkCommand cmd, SocketNumber socketNum, u
 #endif
 
 	// Tell the ESP that we are ready to accept data
+	espWaitingTask = TaskBase::GetCallerTaskHandle();
+	transferPending = true;
 	digitalWrite(SamTfrReadyPin, true);
 
 	// Wait until the DMA transfer is complete, with timeout

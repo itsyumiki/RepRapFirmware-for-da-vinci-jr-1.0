@@ -74,6 +74,8 @@ void DeviceInit() noexcept
 	LegacyAnalogIn::AnalogInInit();
 	AnalogOut::Init();
 #if defined(DA_VINCI_JR) && HAS_WIFI_NETWORKING
+	SetPinMode(EspResetPin, OUTPUT_LOW);
+	SetPinMode(EspEnablePin, OUTPUT_LOW);
 	ParkSharedSpiFlash();
 #endif
 	LpcUartInit();
