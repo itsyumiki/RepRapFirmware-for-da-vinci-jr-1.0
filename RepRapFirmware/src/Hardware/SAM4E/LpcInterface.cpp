@@ -21,6 +21,7 @@ static uint32_t lastPingSent;
 static uint32_t lastPongReceived;
 static uint32_t connectionGeneration;
 static Mutex transmitMutex;
+static bool firmwareUpdateActive;
 
 static uint8_t thermistorPayload[16];
 static uint8_t modelAPayload[16];
@@ -87,7 +88,10 @@ static void Send(LpcProtocol::MessageType type, const uint8_t* payload, uint8_t 
 	uint8_t encoded[LpcProtocol::MaxEncodedFrame];
 	const size_t length = LpcProtocol::Encode(type, payload, payloadLength, encoded);
 	MutexLocker lock(transmitMutex);
-	lpcUart.write(encoded, length);
+	if (!firmwareUpdateActive)
+	{
+		lpcUart.write(encoded, length);
+	}
 }
 
 static void SendPing() noexcept
@@ -239,6 +243,25 @@ void Init() noexcept
 	thermalStatusReceived = false;
 	lastPongReceived = 0;
 	SendPing();
+}
+
+void PrepareForFirmwareUpdate() noexcept
+{
+	MutexLocker lock(transmitMutex);
+	firmwareUpdateActive = true;
+	SetOffline();
+	LpcProtocol::Reset(decoder);
+	lpcUart.ClearReceiveBuffer();
+}
+
+void FirmwareUpdateFinished() noexcept
+{
+	MutexLocker lock(transmitMutex);
+	SetOffline();
+	LpcProtocol::Reset(decoder);
+	lpcUart.ClearReceiveBuffer();
+	lastPingSent = millis();
+	firmwareUpdateActive = false;
 }
 
 void Spin() noexcept

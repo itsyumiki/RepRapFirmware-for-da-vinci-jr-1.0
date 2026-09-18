@@ -79,6 +79,11 @@ constexpr Pin LpcUartRxPin = PortAPin(5);
 constexpr Pin LpcUartTxPin = PortAPin(6);
 constexpr GpioPinFunction LpcUartPinFunction = GpioPinFunction::C;
 
+// LPC1115 ROM ISP control: PC13 drives PIO0_1/ISP and PC15 drives
+// PIO0_0/RESET. Both signals are active low during boot entry.
+constexpr Pin LpcIspPin = PortCPin(13);
+constexpr Pin LpcResetPin = PortCPin(15);
+
 // X, Y, Z, E1 motor wiring. The TB62269 ENABLE inputs are active high.
 constexpr Pin DriverEnablePins[NumDirectDrivers] = {
 	PortDPin(3), PortDPin(5), PortDPin(6), PortDPin(16)

@@ -9,6 +9,10 @@ build:
     python3 tools/native_build.py build
     python3 tools/lpc_build.py build
 
+# Build a standalone LPC1115 image that blinks the D18 status LED.
+build-lpc-demo:
+    python3 tools/lpc_build.py build-demo
+
 # Remove all native build outputs.
 clean:
     python3 tools/native_build.py clean

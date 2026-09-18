@@ -800,7 +800,7 @@ GCodeResult GCodes::UpdateFirmware(GCodeBuffer& gb, const StringRef &reply) THRO
 		}
 
 		// Check prerequisites of all modules to be updated, if any are not met then don't update any of them
-#if HAS_WIFI_NETWORKING || HAS_AUX_DEVICES
+#if HAS_WIFI_NETWORKING || HAS_AUX_DEVICES || defined(DA_VINCI_JR)
 		const auto result = FirmwareUpdater::CheckFirmwareUpdatePrerequisites(
 				firmwareUpdateModuleMap, gb, reply,
 # if HAS_AUX_DEVICES

@@ -13,6 +13,10 @@
 #include <Platform/RepRap.h>
 #include <GCodes/GCodes.h>
 
+#if defined(DA_VINCI_JR)
+# include <Hardware/SAM4E/LpcIspUpdater.h>
+#endif
+
 #if HAS_WIFI_NETWORKING
 # include <Networking/Network.h>
 # include <Networking/ESP8266WiFi/WifiFirmwareUploader.h>
@@ -33,6 +37,16 @@ namespace FirmwareUpdater
 			const size_t serialChannel,
 			const StringRef& filenameRef) noexcept
 	{
+#if defined(DA_VINCI_JR)
+		if (moduleMap.IsBitSet(LpcFirmwareModule))
+		{
+			const GCodeResult result = LpcIspUpdater::CheckFirmwareFile(filenameRef, reply);
+			if (result != GCodeResult::ok)
+			{
+				return result;
+			}
+		}
+#endif
 #if HAS_WIFI_NETWORKING && (HAS_MASS_STORAGE || HAS_EMBEDDED_FILES)
 		if (moduleMap.IsBitSet(WifiExternalFirmwareModule) || moduleMap.IsBitSet(WifiFirmwareModule))
 		{
@@ -99,9 +113,14 @@ namespace FirmwareUpdater
 
 	void UpdateModule(unsigned int module, const size_t serialChannel, const StringRef& filenameRef) noexcept
 	{
-#if (HAS_WIFI_NETWORKING || SUPPORT_PANELDUE_FLASH) && (HAS_MASS_STORAGE || HAS_EMBEDDED_FILES)
+#if (HAS_WIFI_NETWORKING || SUPPORT_PANELDUE_FLASH || defined(DA_VINCI_JR)) && (HAS_MASS_STORAGE || HAS_EMBEDDED_FILES)
 		switch(module)
 		{
+# if defined(DA_VINCI_JR)
+		case LpcFirmwareModule:
+			LpcIspUpdater::Update(filenameRef);
+			break;
+# endif
 # if HAS_WIFI_NETWORKING
 		case WifiExternalFirmwareModule:
 			{

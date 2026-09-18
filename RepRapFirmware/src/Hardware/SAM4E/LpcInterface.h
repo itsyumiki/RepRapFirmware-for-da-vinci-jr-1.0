@@ -20,6 +20,8 @@ struct ThermalStatus
 
 void Init() noexcept;
 void Spin() noexcept;
+void PrepareForFirmwareUpdate() noexcept;
+void FirmwareUpdateFinished() noexcept;
 bool IsOnline() noexcept;
 uint32_t GetConnectionGeneration() noexcept;
 bool IsPinAvailable(Pin pin) noexcept;

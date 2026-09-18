@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_DIR = ROOT / "build" / "LpcFirmware"
+DEMO_BUILD_DIR = ROOT / "build" / "LpcStatusLedDemo"
 FLASH_SIZE = 64 * 1024
 RAM_TOP = 0x10002000
 CRP_OFFSET = 0x2FC
@@ -42,6 +43,11 @@ SOURCES = (
     ROOT / "LpcFirmware" / "src" / "main.cpp",
     ROOT / "Shared" / "src" / "LpcProtocol.cpp",
 )
+DEMO_SOURCES = (
+    ROOT / "LpcFirmware" / "src" / "startup.S",
+    ROOT / "LpcFirmware" / "src" / "Gpio.cpp",
+    ROOT / "LpcFirmware" / "demo" / "status_led.cpp",
+)
 
 
 def tool(name: str) -> str:
@@ -55,9 +61,9 @@ def run(command: list[str]) -> None:
     subprocess.run(command, check=True)
 
 
-def compile_source(source: Path) -> Path:
+def compile_source(source: Path, build_dir: Path) -> Path:
     relative = source.relative_to(ROOT)
-    obj = BUILD_DIR / "obj" / relative.with_suffix(relative.suffix + ".o")
+    obj = build_dir / "obj" / relative.with_suffix(relative.suffix + ".o")
     obj.parent.mkdir(parents=True, exist_ok=True)
     if source.suffix == ".S":
         command = [tool("gcc"), *COMMON_FLAGS, *INCLUDES, "-c", str(source), "-o", str(obj)]
@@ -103,12 +109,12 @@ def validate_image(binary: Path) -> None:
         raise RuntimeError(f"LPC1115 CRP word is 0x{crp_word:08X}, expected 0x{CRP_DISABLED:08X}")
 
 
-def build() -> None:
-    clean()
-    objects = [compile_source(source) for source in SOURCES]
-    elf = BUILD_DIR / "Lpc1115Firmware.elf"
-    binary = BUILD_DIR / "Lpc1115Firmware.bin"
-    map_file = BUILD_DIR / "Lpc1115Firmware.map"
+def build_image(sources: tuple[Path, ...], build_dir: Path, name: str) -> None:
+    shutil.rmtree(build_dir, ignore_errors=True)
+    objects = [compile_source(source, build_dir) for source in sources]
+    elf = build_dir / f"{name}.elf"
+    binary = build_dir / f"{name}.bin"
+    map_file = build_dir / f"{name}.map"
     linker_script = ROOT / "LpcFirmware" / "lpc1115.ld"
     run(
         [
@@ -135,14 +141,20 @@ def build() -> None:
 
 def clean() -> None:
     shutil.rmtree(BUILD_DIR, ignore_errors=True)
+    shutil.rmtree(DEMO_BUILD_DIR, ignore_errors=True)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the Da Vinci Jr LPC1115 firmware")
-    parser.add_argument("command", choices=("build", "clean"))
+    parser.add_argument("command", choices=("build", "build-demo", "clean"))
     args = parser.parse_args()
     try:
-        clean() if args.command == "clean" else build()
+        if args.command == "clean":
+            clean()
+        elif args.command == "build-demo":
+            build_image(DEMO_SOURCES, DEMO_BUILD_DIR, "LpcStatusLedDemo")
+        else:
+            build_image(SOURCES, BUILD_DIR, "Lpc1115Firmware")
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

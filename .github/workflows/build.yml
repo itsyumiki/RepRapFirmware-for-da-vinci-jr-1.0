@@ -29,6 +29,9 @@ jobs:
       - name: Build firmware
         run: just build
 
+      - name: Build LPC1115 status LED demo
+        run: just build-lpc-demo
+
       - name: Upload SAM4E firmware
         uses: actions/upload-artifact@v4
         with:
@@ -47,3 +50,9 @@ jobs:
             build/LpcFirmware/Lpc1115Firmware.bin
             build/LpcFirmware/Lpc1115Firmware.elf
             build/LpcFirmware/Lpc1115Firmware.map
+
+      - name: Upload LPC1115 status LED demo
+        uses: actions/upload-artifact@v4
+        with:
+          name: lpc1115-status-led-demo-da-vinci-jr-1.0
+          path: build/LpcStatusLedDemo/LpcStatusLedDemo.bin

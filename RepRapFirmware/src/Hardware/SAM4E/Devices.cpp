@@ -23,6 +23,8 @@ static void LpcUartInit() noexcept
 	SetPinFunction(LpcUartRxPin, LpcUartPinFunction);
 	SetPinFunction(LpcUartTxPin, LpcUartPinFunction);
 	EnablePullup(LpcUartRxPin);
+	static_assert(NvicPriorityAuxUart >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+	lpcUart.setInterruptPriority(NvicPriorityAuxUart);
 	lpcUart.begin(LpcUartBaudRate);
 }
 
