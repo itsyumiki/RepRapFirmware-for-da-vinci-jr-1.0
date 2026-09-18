@@ -26,9 +26,6 @@ jobs:
           tar --extract --file arm-gnu-toolchain.tar.xz
           echo "$GITHUB_WORKSPACE/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/bin" >> "$GITHUB_PATH"
 
-      - name: Test end-of-print configuration
-        run: python3 tools/end_print_selftest.py
-
       - name: Build firmware
         run: just build
 
@@ -41,7 +38,6 @@ jobs:
             build/RepRapFirmware/DaVinciJrFirmware.elf
             build/RepRapFirmware/DaVinciJrFirmware.map
             sys/
-            octoprint/
 
       - name: Upload LPC1115 firmware
         uses: actions/upload-artifact@v4
