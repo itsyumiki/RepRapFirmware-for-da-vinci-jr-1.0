@@ -1,0 +1,2 @@
+; OctoPrint streams over USB, so explicitly run the printer's completion macro.
+M98 P"0:/sys/stop.g"
