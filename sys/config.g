@@ -2,6 +2,10 @@
 
 M550 P"Da Vinci Jr 1.0"
 
+; LCD backlight on SAM4E PC10, active low.
+M950 P0 C"lcd.backlight"
+M42 P0 S1
+
 ; Driver 0=X, 1=Y, 2=Z, 3=E1.
 M584 X0 Y1 Z2 E3
 
