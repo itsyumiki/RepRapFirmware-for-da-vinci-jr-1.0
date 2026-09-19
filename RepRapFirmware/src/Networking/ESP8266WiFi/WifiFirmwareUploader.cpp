@@ -15,6 +15,9 @@
 #include <Platform/Platform.h>
 #include <Platform/RepRap.h>
 #include <Storage/FileStore.h>
+#if defined(DA_VINCI_JR)
+# include <Hardware/SAM4E/LpcInterface.h>
+#endif
 
 constexpr uint32_t Esp32FlashModuleSize = 4 * 1024 * 1024;		// assume at least 4Mbytes flash
 
@@ -797,6 +800,9 @@ void WifiFirmwareUploader::Spin() noexcept
 	case UploadState::done:
 		uploadFile->Close();
 		interface.EndFirmwareUploadSerial();
+#if defined(DA_VINCI_JR)
+		LpcInterface::FirmwareUpdateFinished();
+#endif
 #if STM32
 		DeleteObject(blkBuf32);
 #endif
@@ -867,6 +873,9 @@ void WifiFirmwareUploader::SendUpdateFile(const char *_ecv_array file, uint32_t 
 #endif
 
 	// Stop the network
+#if defined(DA_VINCI_JR)
+	LpcInterface::PrepareForFirmwareUpdate();
+#endif
 	restartModeOnCompletion = interface.EnableState();
 	interface.Stop();
 

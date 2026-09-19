@@ -248,6 +248,8 @@ void Init() noexcept
 void PrepareForFirmwareUpdate() noexcept
 {
 	MutexLocker lock(transmitMutex);
+	Send(LpcProtocol::MessageType::configurationReset, nullptr, 0);
+	lpcUart.flush();
 	firmwareUpdateActive = true;
 	SetOffline();
 	LpcProtocol::Reset(decoder);
