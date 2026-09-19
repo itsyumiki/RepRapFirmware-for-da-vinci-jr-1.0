@@ -424,7 +424,11 @@ static void EspChipSelectRiseIsr(CallbackParameter) noexcept
 
 static inline void EnableEspInterrupt() noexcept
 {
+#if defined(DA_VINCI_JR)
+	AttachPinInterrupt(EspDataReadyPin, EspTransferRequestIsr, InterruptMode::falling, CallbackParameter(nullptr));
+#else
 	AttachPinInterrupt(EspDataReadyPin, EspTransferRequestIsr, InterruptMode::rising, CallbackParameter(nullptr));
+#endif
 }
 
 static inline void DisableEspInterrupt() noexcept
