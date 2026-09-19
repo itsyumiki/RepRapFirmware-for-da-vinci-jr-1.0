@@ -22,10 +22,14 @@ namespace FirmwareUpdater
 		LpcFirmwareModule = 3,
 #endif
 #if HAS_WIFI_NETWORKING
+# if defined(DA_VINCI_JR)
 		WifiExternalFirmwareModule = 4,
+# else
+		WifiExternalFirmwareModule = 3,
+# endif
 #endif
 #if HAS_AUX_DEVICES
-		PanelDueFirmwareModule = 5,
+		PanelDueFirmwareModule = 4,
 #endif
 		NumUpdateModules
 	};
