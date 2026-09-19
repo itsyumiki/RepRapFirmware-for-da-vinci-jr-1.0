@@ -112,6 +112,7 @@ constexpr Pin SamCsPin = PortBPin(2);
 constexpr IRQn SamCsIRQn = PIOB_IRQn;
 constexpr Pin EspUartTxPin = PortCPin(24);       // SAM TX -> ESP RXD0
 constexpr Pin EspUartRxPin = PortDPin(29);       // SAM RX <- ESP TXD0
+constexpr IRQn EspUartRxIRQn = PIOD_IRQn;
 
 constexpr DmaChannel DmacChanWiFiTx = 1;
 constexpr DmaChannel DmacChanWiFiRx = 2;

@@ -46,6 +46,8 @@ public:
 		SetPinMode(EspUartTxPin, OUTPUT_HIGH);
 		SetPinMode(EspUartRxPin, INPUT_PULLUP);
 		AttachPinInterrupt(EspUartRxPin, RxStart, InterruptMode::falling, CallbackParameter(this));
+		previousRxIrqPriority = NVIC_GetPriority(EspUartRxIRQn);
+		NVIC_SetPriority(EspUartRxIRQn, NvicPriorityAuxUart);
 	}
 
 	void End() noexcept
@@ -53,6 +55,7 @@ public:
 		if (enabled)
 		{
 			DetachPinInterrupt(EspUartRxPin);
+			NVIC_SetPriority(EspUartRxIRQn, previousRxIrqPriority);
 			enabled = false;
 		}
 		SetPinMode(EspUartTxPin, INPUT_PULLUP);
@@ -144,6 +147,7 @@ private:
 
 	RingBuffer<uint8_t> rxBuffer;
 	uint32_t bitCycles = 0;
+	uint32_t previousRxIrqPriority = NvicPriorityPins;
 	bool enabled = false;
 };
 
