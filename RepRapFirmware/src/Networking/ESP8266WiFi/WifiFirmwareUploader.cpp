@@ -364,6 +364,9 @@ inline void WifiFirmwareUploader::writePacket(const uint8_t *_ecv_array data, si
 // 0xc0 and 0xdb replaced by the two-byte sequences {0xdb, 0xdc} and {0xdb, 0xdd} respectively.
 void WifiFirmwareUploader::writePacket(const uint8_t *_ecv_array hdr, size_t hdrLen, const uint8_t *_ecv_array data, size_t dataLen) noexcept
 {
+#if WIFI_USES_SOFTWARE_UART
+	TaskCriticalSectionLocker lock;
+#endif
 	WriteByteRaw(0xc0);				// send the packet start character
 	writePacket(hdr, hdrLen);		// send the header
 	writePacket(data, dataLen);		// send the data block
