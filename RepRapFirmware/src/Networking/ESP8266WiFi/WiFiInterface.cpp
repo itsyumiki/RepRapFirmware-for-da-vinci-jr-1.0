@@ -2727,19 +2727,20 @@ void WiFiInterface::ResetWiFi() noexcept
 
 	SetPinMode(EspEnablePin, OUTPUT_LOW);
 
-#if !WIFI_USES_SOFTWARE_UART && !defined(SAME5x)
+#if WIFI_USES_SOFTWARE_UART
+	wifiSoftwareUart.End();
+#else
+# if !defined(SAME5x)
 	pinMode(APIN_SerialWiFi_TXD, INPUT_PULLUP);					// just enable pullups on TxD and RxD pins
 	pinMode(APIN_SerialWiFi_RXD, INPUT_PULLUP);
-#endif
-	currentMode = WiFiState::disabled;
-
-#if !WIFI_USES_SOFTWARE_UART
+# endif
 	if (serialRunning)
 	{
 		SERIAL_WIFI_DEVICE.end();
 		serialRunning = false;
 	}
 #endif
+	currentMode = WiFiState::disabled;
 }
 
 // Reset the ESP8266 to take commands from the UART or from external input. The caller must wait for the reset to complete after calling this.
