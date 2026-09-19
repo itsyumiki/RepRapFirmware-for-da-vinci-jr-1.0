@@ -11,7 +11,6 @@
 
 #include "WiFiInterface.h"
 
-#include <Devices.h>
 #include <Stream.h>
 #include <Platform/Platform.h>
 #include <Platform/RepRap.h>
