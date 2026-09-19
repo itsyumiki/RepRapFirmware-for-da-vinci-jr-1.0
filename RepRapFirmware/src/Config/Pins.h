@@ -155,8 +155,16 @@
 # define HAS_WIFI_NETWORKING	0
 #endif
 
-#if HAS_WIFI_NETWORKING && !defined(WIFI_USES_ESP32)
-# define WIFI_USES_ESP32		0
+#if HAS_WIFI_NETWORKING
+# if !defined(WIFI_USES_ESP32)
+#  define WIFI_USES_ESP32		0
+# endif
+# if !defined(WIFI_USES_SOFTWARE_UART)
+#  define WIFI_USES_SOFTWARE_UART	0
+# endif
+# if !defined(WIFI_USES_GPIO_CS)
+#  define WIFI_USES_GPIO_CS	0
+# endif
 #endif
 
 #ifndef HAS_W5500_NETWORKING

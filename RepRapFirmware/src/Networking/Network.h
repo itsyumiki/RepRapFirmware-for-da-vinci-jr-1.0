@@ -18,7 +18,7 @@
 const size_t MaxNetworkInterfaces = 0;
 #elif defined(DUET3_MB6HC) && HAS_WIFI_NETWORKING
 const size_t MaxNetworkInterfaces = 2;
-#elif defined(DUET3_MB6HC) || defined(DUET3_MB6XD) || defined(DUET_NG) || defined(DUET_M) || defined(PCCB) || defined(DUET3MINI)
+#elif defined(DUET3_MB6HC) || defined(DUET3_MB6XD) || defined(DUET_NG) || defined(DUET_M) || defined(PCCB) || defined(DUET3MINI) || defined(DA_VINCI_JR)
 const size_t MaxNetworkInterfaces = 1;
 #else
 # error Wrong Network.h file included

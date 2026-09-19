@@ -25,6 +25,135 @@
 #include <Cache.h>
 #include <AppNotifyIndices.h>
 
+#if WIFI_USES_SOFTWARE_UART
+#include <Interrupts.h>
+#include <Stream.h>
+#include <General/RingBuffer.h>
+
+class WiFiSoftwareUart final : public Stream
+{
+public:
+	WiFiSoftwareUart() noexcept
+	{
+		rxBuffer.Init(64);
+	}
+
+	void Begin(uint32_t baud) noexcept
+	{
+		rxBuffer.Clear();
+		bitCycles = (SystemCoreClockFreq + baud/2) / baud;
+		enabled = true;
+		SetPinMode(EspUartTxPin, OUTPUT_HIGH);
+		SetPinMode(EspUartRxPin, INPUT_PULLUP);
+		AttachPinInterrupt(EspUartRxPin, RxStart, InterruptMode::falling, CallbackParameter(this));
+		previousRxIrqPriority = NVIC_GetPriority(EspUartRxIRQn);
+		NVIC_SetPriority(EspUartRxIRQn, NvicPriorityAuxUart);
+	}
+
+	void End() noexcept
+	{
+		if (enabled)
+		{
+			DetachPinInterrupt(EspUartRxPin);
+			NVIC_SetPriority(EspUartRxIRQn, previousRxIrqPriority);
+			enabled = false;
+		}
+		SetPinMode(EspUartTxPin, INPUT_PULLUP);
+		SetPinMode(EspUartRxPin, INPUT_PULLUP);
+	}
+
+	int available() noexcept override
+	{
+		return (int)rxBuffer.ItemsPresent();
+	}
+
+	int read() noexcept override
+	{
+		uint8_t data;
+		return rxBuffer.GetItem(data) ? data : -1;
+	}
+
+	void flush() noexcept override { }
+
+	size_t canWrite() noexcept override
+	{
+		return enabled ? 1 : 0;
+	}
+
+	size_t write(uint8_t data) noexcept override
+	{
+		return write(&data, 1);
+	}
+
+	size_t write(const uint8_t *_ecv_array data, size_t length) noexcept override
+	{
+		if (!enabled)
+		{
+			return 0;
+		}
+
+		AtomicCriticalSectionLocker lock;
+		for (size_t i = 0; i < length; ++i)
+		{
+			WriteByte(data[i]);
+		}
+		return length;
+	}
+
+private:
+	static void RxStart(CallbackParameter param) noexcept
+	{
+		static_cast<WiFiSoftwareUart*>(param.vp)->ReceiveByte();
+	}
+
+	void ReceiveByte() noexcept
+	{
+		AtomicCriticalSectionLocker lock;
+		if (!enabled || digitalRead(EspUartRxPin))
+		{
+			return;
+		}
+		uint8_t data = 0;
+		uint32_t sampleTime = DelayCycles(GetCurrentCycles(), bitCycles + bitCycles/2);
+		for (unsigned int bit = 0; bit < 8; ++bit)
+		{
+			if (digitalRead(EspUartRxPin))
+			{
+				data |= (uint8_t)(1u << bit);
+			}
+			sampleTime = DelayCycles(sampleTime, bitCycles);
+		}
+
+		if (digitalRead(EspUartRxPin))
+		{
+			(void)rxBuffer.PutItem(data);
+		}
+	}
+
+	void WriteByte(uint8_t data) noexcept
+	{
+		uint32_t transitionTime = GetCurrentCycles();
+		digitalWrite(EspUartTxPin, false);
+		for (unsigned int bit = 0; bit < 8; ++bit)
+		{
+			transitionTime = DelayCycles(transitionTime, bitCycles);
+			digitalWrite(EspUartTxPin, (data & 1u) != 0);
+			data >>= 1;
+		}
+		transitionTime = DelayCycles(transitionTime, bitCycles);
+		digitalWrite(EspUartTxPin, true);
+		(void)DelayCycles(transitionTime, bitCycles);
+	}
+
+	RingBuffer<uint8_t> rxBuffer;
+	uint32_t bitCycles = 0;
+	uint32_t previousRxIrqPriority = NvicPriorityPins;
+	bool enabled = false;
+};
+
+static WiFiSoftwareUart wifiSoftwareUart;
+#endif
+
 #if HAS_LWIP_NETWORKING && defined(DUET3MINI_V04)
 # include "LwipEthernet/AllocateFromPbufPool.h"
 #endif
@@ -113,6 +242,10 @@ const uint32_t WiFiStableMillis = 500;					// Spin() fails in state starting2 wh
 const uint32_t WiFiStableMillis = 100;
 #endif
 
+#if defined(DA_VINCI_JR)
+const uint32_t WiFiModeStatusFallbackMillis = 5000;
+#endif
+
 const unsigned int MaxHttpConnections = 4;
 
 #if SAME5x
@@ -177,7 +310,8 @@ static void spi_dma_disable() noexcept;
 static bool spi_dma_check_rx_complete() noexcept;
 #endif
 
-#ifdef DUET3MINI
+#if !WIFI_USES_SOFTWARE_UART
+# ifdef DUET3MINI
 
 AsyncSerial *serialWiFiDevice;
 # define SERIAL_WIFI_DEVICE	(*serialWiFiDevice)
@@ -201,10 +335,11 @@ void SERIAL_WIFI_ISR3() noexcept
 	serialWiFiDevice->Interrupt3();
 }
 
-#else
+# else
 
 #define SERIAL_WIFI_DEVICE	(serialWiFi)
 
+# endif
 #endif
 
 static volatile bool transferPending = false;
@@ -240,6 +375,50 @@ static void EspTransferRequestIsr(CallbackParameter) noexcept
 {
 	wifiInterface->EspRequestsTransfer();
 }
+
+#if WIFI_USES_GPIO_CS
+// The shared flash is kept in deep power-down, where 0xAB is the only SPI
+// command that can wake it. Every ESP reply starts with MyFormatVersion.
+static_assert(MyFormatVersion != 0xAB, "WiFi format version would wake the shared SPI flash");
+
+static inline void DeselectSpiSlave() noexcept
+{
+	Pio * const pio = GpioPort(APIN_ESP_SPI_SS0);
+	const uint32_t mask = GpioMask(APIN_ESP_SPI_SS0);
+	pio->PIO_PPDDR = mask;
+	pio->PIO_PUER = mask;
+}
+
+static bool SelectSpiSlave() noexcept
+{
+	DeselectSpiSlave();
+	delayMicroseconds(5);
+	if (!digitalRead(APIN_ESP_SPI_SS0))
+	{
+		return false;
+	}
+
+	Pio * const pio = GpioPort(APIN_ESP_SPI_SS0);
+	const uint32_t mask = GpioMask(APIN_ESP_SPI_SS0);
+	pio->PIO_PUDR = mask;
+	pio->PIO_PPDER = mask;
+	delayMicroseconds(5);
+	if (digitalRead(APIN_ESP_SPI_SS0))
+	{
+		DeselectSpiSlave();
+		return false;
+	}
+	return true;
+}
+
+static void EspChipSelectRiseIsr(CallbackParameter) noexcept
+{
+	if (transferPending)
+	{
+		wifiInterface->SpiInterrupt();
+	}
+}
+#endif
 
 static inline void EnableEspInterrupt() noexcept
 {
@@ -320,11 +499,13 @@ WiFiInterface::WiFiInterface(Platform& p) noexcept
 	actualSsid.copy("(unknown)");
 	wiFiServerVersion.copy("(unknown)");
 
-#ifdef DUET3MINI
+#if !WIFI_USES_SOFTWARE_UART
+# ifdef DUET3MINI
 	serialWiFiDevice = new AsyncSerial(WiFiUartSercomNumber, WiFiUartRxPad, 512, 512, SerialWiFiPortInit, SerialWiFiPortDeinit);
 	serialWiFiDevice->setInterruptPriority(NvicPriorityWiFiUartRx, NvicPriorityWiFiUartTx);
-#else
+# else
 	SERIAL_WIFI_DEVICE.setInterruptPriority(NvicPriorityWiFiUart);
+# endif
 #endif
 }
 
@@ -495,7 +676,11 @@ void WiFiInterface::Activate() noexcept
 #endif
 
 #if HAS_MASS_STORAGE || HAS_EMBEDDED_FILES
+# if WIFI_USES_SOFTWARE_UART
+		uploader = new WifiFirmwareUploader(wifiSoftwareUart, *this);
+# else
 		uploader = new WifiFirmwareUploader(SERIAL_WIFI_DEVICE, *this);
+# endif
 #endif
 		if (requestedMode != WiFiState::disabled)
 		{
@@ -626,7 +811,12 @@ void WiFiInterface::Stop() noexcept
 		digitalWrite(EspEnablePin, false);
 		DisableEspInterrupt();						// ignore IRQs from the transfer request pin
 
+#if WIFI_USES_GPIO_CS
+		DeselectSpiSlave();
+		DisablePinInterrupt(SamCsPin);
+#else
 		NVIC_DisableIRQ(ESP_SPI_IRQn);
+#endif
 		DisableSpi();
 #if !SAME5x
 		spi_dma_check_rx_complete();
@@ -768,6 +958,9 @@ void WiFiInterface::Spin() noexcept
 
 			if (rslt >= 0)
 			{
+#if defined(DA_VINCI_JR)
+				lastTickMillis = millis();
+#endif
 				SetState(NetworkState::changingMode);
 			}
 			else
@@ -841,10 +1034,22 @@ void WiFiInterface::Spin() noexcept
 
 	case NetworkState::changingMode:
 		// Here when we have asked the ESP to change mode. Don't leave this state until we have a new status report from the ESP.
-		if (espStatusChanged && digitalRead(EspDataReadyPin))
 		{
-			GetNewStatus();
-			switch (currentMode)
+			bool haveNewStatus = false;
+			if (espStatusChanged && digitalRead(EspDataReadyPin))
+			{
+				haveNewStatus = GetNewStatus();
+			}
+#if defined(DA_VINCI_JR)
+			else if (millis() - lastTickMillis >= WiFiModeStatusFallbackMillis)
+			{
+				lastTickMillis = millis();
+				haveNewStatus = GetNewStatus(false);
+			}
+#endif
+			if (haveNewStatus)
+			{
+				switch (currentMode)
 			{
 			case WiFiState::connecting:
 			case WiFiState::reconnecting:
@@ -880,6 +1085,7 @@ void WiFiInterface::Spin() noexcept
 				SetState(NetworkState::idle);
 				platform.MessageF(NetworkInfoMessage, "WiFi module is %s\n", TranslateWiFiState(currentMode));
 				break;
+				}
 			}
 		}
 		break;
@@ -888,6 +1094,7 @@ void WiFiInterface::Spin() noexcept
 		break;
 	}
 
+#if !WIFI_USES_SOFTWARE_UART
 	// Check for debug info received from the WiFi module
 	if (serialRunning)
 	{
@@ -908,6 +1115,7 @@ void WiFiInterface::Spin() noexcept
 			}
 		}
 	}
+#endif
 
 	// Check for debug info received from the WiFi module
 	if (debugPrintPending)
@@ -954,6 +1162,7 @@ void WiFiInterface::Diagnostics(const StringRef& reply) noexcept
 					 TranslateWiFiState(currentMode),
 					 transferAlreadyPendingCount, readyTimeoutCount, responseTimeoutCount
 			   );
+
 
 	if (GetState() != NetworkState::disabled && GetState() != NetworkState::starting1 && GetState() != NetworkState::starting2)
 	{
@@ -2086,7 +2295,15 @@ void WiFiInterface::SetupSpi() noexcept
 	SetPinFunction(APIN_ESP_SPI_SCK, SPIPeriphMode);
 	SetPinFunction(APIN_ESP_SPI_MOSI, SPIPeriphMode);
 	SetPinFunction(APIN_ESP_SPI_MISO, SPIPeriphMode);
+#if WIFI_USES_GPIO_CS
+	SetPinMode(APIN_ESP_SPI_SS0, INPUT_PULLUP);
+#endif
 	SetPinFunction(APIN_ESP_SPI_SS0, SPIPeriphMode);
+
+#if WIFI_USES_GPIO_CS
+	AttachPinInterrupt(SamCsPin, EspChipSelectRiseIsr, InterruptMode::rising, CallbackParameter(nullptr));
+	NVIC_SetPriority(SamCsIRQn, NvicPrioritySpi);
+#endif
 
 	pmc_enable_periph_clk(ESP_SPI_INTERFACE_ID);
 #endif
@@ -2109,11 +2326,15 @@ void WiFiInterface::SetupSpi() noexcept
 	WiFiSpiSercom->SPI.INTFLAG.reg = 0xFF;		// clear any pending interrupts
 #else
 	(void)ESP_SPI->SPI_SR;						// clear any pending interrupt
+#if !WIFI_USES_GPIO_CS
 	ESP_SPI->SPI_IDR = SPI_IER_NSSR;			// disable the interrupt
 #endif
+#endif
 
+#if !WIFI_USES_GPIO_CS
 	NVIC_SetPriority(ESP_SPI_IRQn, NvicPrioritySpi);
 	NVIC_EnableIRQ(ESP_SPI_IRQn);
+#endif
 }
 
 // Send a command to the ESP and get the result
@@ -2186,8 +2407,6 @@ int32_t WiFiInterface::SendCommand(NetworkCommand cmd, SocketNumber socketNum, u
 		memcpy(bufferOut->data, dataOut, dataOutLength);
 	}
 	bufferIn->hdr.formatVersion = InvalidFormatVersion;
-	espWaitingTask = TaskBase::GetCallerTaskHandle();
-	transferPending = true;
 
 	Cache::FlushBeforeDMASend(bufferOut, (dataOut != nullptr) ? sizeof(bufferOut->hdr) + dataOutLength : sizeof(bufferOut->hdr));
 
@@ -2207,12 +2426,27 @@ int32_t WiFiInterface::SendCommand(NetworkCommand cmd, SocketNumber socketNum, u
 	spi_slave_dma_setup(dataOutLength, dataInLength);
 	EnableSpi();
 
-	// Enable the end-of transfer interrupt
+#if WIFI_USES_GPIO_CS
+	// SAM4E slave mode requires an NPCS0 falling edge before it accepts clocks.
+	// Pull NPCS0 low before telling the ESP that we are ready; PB02 still
+	// provides the real transaction boundary and its rising edge completes DMA.
+	if (!SelectSpiSlave())
+	{
+		spi_dma_disable();
+		DisableSpi();
+		++responseTimeoutCount;
+		return ResponseTimeout;
+	}
+#else
+	// Enable the end-of-transfer interrupt
 	(void)ESP_SPI->SPI_SR;										// clear any pending interrupt
 	ESP_SPI->SPI_IER = SPI_IER_NSSR;							// enable the NSS rising interrupt
 #endif
+#endif
 
 	// Tell the ESP that we are ready to accept data
+	espWaitingTask = TaskBase::GetCallerTaskHandle();
+	transferPending = true;
 	digitalWrite(SamTfrReadyPin, true);
 
 	// Wait until the DMA transfer is complete, with timeout
@@ -2230,6 +2464,12 @@ int32_t WiFiInterface::SendCommand(NetworkCommand cmd, SocketNumber socketNum, u
 				debugPrintf("ResponseTimeout, pending=%d\n", (int)transferPending);
 			}
 			transferPending = false;
+			digitalWrite(SamTfrReadyPin, false);
+			espWaitingTask = nullptr;
+#if WIFI_USES_GPIO_CS
+			DeselectSpiSlave();
+			DisableSpi();
+#endif
 			spi_dma_disable();
 			++responseTimeoutCount;
 			return ResponseTimeout;
@@ -2360,7 +2600,7 @@ void WiFiInterface::StopListening(TcpPort port) noexcept
 }
 
 // This is called when ESP is signalling to us that an error occurred or there was a state change
-void WiFiInterface::GetNewStatus() noexcept
+bool WiFiInterface::GetNewStatus(bool reportTransportFailure) noexcept
 {
 	struct MessageResponse
 	{
@@ -2375,12 +2615,17 @@ void WiFiInterface::GetNewStatus() noexcept
 	rcvr.Value().messageBuffer[ARRAY_UPB(rcvr.Value().messageBuffer)] = 0;
 	if (rslt < 0)
 	{
-		platform.MessageF(NetworkErrorMessage, "failed to retrieve WiFi status message: %s\n", TranslateWiFiResponse(rslt));
+		if (reportTransportFailure)
+		{
+			platform.MessageF(NetworkErrorMessage, "failed to retrieve WiFi status message: %s\n", TranslateWiFiResponse(rslt));
+		}
+		return false;
 	}
-	else if (rslt > 0 && rcvr.Value().messageBuffer[0] != 0)
+	if (rslt > 0 && rcvr.Value().messageBuffer[0] != 0)
 	{
 		platform.MessageF(NetworkErrorMessage, "WiFi module reported: %s\n", rcvr.Value().messageBuffer);
 	}
+	return true;
 }
 
 /*static*/ const char *_ecv_array WiFiInterface::TranslateWiFiResponse(int32_t response) noexcept
@@ -2405,6 +2650,7 @@ void WiFiInterface::GetNewStatus() noexcept
 	}
 }
 
+#if !WIFI_USES_GPIO_CS
 # ifndef ESP_SPI_HANDLER
 #  error ESP_SPI_HANDLER not defined
 # endif
@@ -2414,20 +2660,34 @@ void ESP_SPI_HANDLER() noexcept
 {
 	wifiInterface->SpiInterrupt();
 }
+#endif
 
 void WiFiInterface::SpiInterrupt() noexcept
 {
 #if SAME5x
 	const uint8_t status = WiFiSpiSercom->SPI.INTFLAG.reg;
-	if ((status & SERCOM_SPI_INTFLAG_TXC) != 0)
+	const bool transferComplete = (status & SERCOM_SPI_INTFLAG_TXC) != 0;
+	if (transferComplete)
 	{
 		WiFiSpiSercom->SPI.INTENCLR.reg = SERCOM_SPI_INTENCLR_TXC;		// disable the interrupt
 		WiFiSpiSercom->SPI.INTFLAG.reg = SERCOM_SPI_INTFLAG_TXC;		// clear the status
+	}
 #else
+# if WIFI_USES_GPIO_CS
+	DeselectSpiSlave();
+# endif
 	const uint32_t status = ESP_SPI->SPI_SR;							// read status and clear interrupt
+# if WIFI_USES_GPIO_CS
+	const bool transferComplete = true;
+# else
 	ESP_SPI->SPI_IDR = SPI_IER_NSSR;									// disable the interrupt
-	if ((status & SPI_SR_NSSR) != 0)
+	const bool transferComplete = (status & SPI_SR_NSSR) != 0;
+# endif
+#endif
+
+	if (transferComplete)
 	{
+#if !SAME5x
 
 # if USE_PDC
 		pdc_disable_transfer(spi_pdc, PERIPH_PTCR_TXTDIS | PERIPH_PTCR_RXTDIS);
@@ -2470,13 +2730,15 @@ void WiFiInterface::StartWiFi() noexcept
 
 	digitalWrite(EspEnablePin, true);
 
-#if WIFI_USES_ESP32
+#if !WIFI_USES_SOFTWARE_UART && WIFI_USES_ESP32
 	SERIAL_WIFI_DEVICE.begin(WiFiBaudRate_ESP32);				// initialise the UART, to receive debug info
-#else
+#elif !WIFI_USES_SOFTWARE_UART
 	SERIAL_WIFI_DEVICE.begin(WiFiBaudRate);						// initialise the UART, to receive debug info
 #endif
 	debugMessageChars = 0;
+#if !WIFI_USES_SOFTWARE_UART
 	serialRunning = true;
+#endif
 	debugPrintPending = false;
 }
 
@@ -2489,17 +2751,20 @@ void WiFiInterface::ResetWiFi() noexcept
 
 	SetPinMode(EspEnablePin, OUTPUT_LOW);
 
-#if !defined(SAME5x)
+#if WIFI_USES_SOFTWARE_UART
+	wifiSoftwareUart.End();
+#else
+# if !defined(SAME5x)
 	pinMode(APIN_SerialWiFi_TXD, INPUT_PULLUP);					// just enable pullups on TxD and RxD pins
 	pinMode(APIN_SerialWiFi_RXD, INPUT_PULLUP);
-#endif
-	currentMode = WiFiState::disabled;
-
+# endif
 	if (serialRunning)
 	{
 		SERIAL_WIFI_DEVICE.end();
 		serialRunning = false;
 	}
+#endif
+	currentMode = WiFiState::disabled;
 }
 
 // Reset the ESP8266 to take commands from the UART or from external input. The caller must wait for the reset to complete after calling this.
@@ -2510,11 +2775,16 @@ void WiFiInterface::ResetWiFi() noexcept
 // 0		0		1		SD card boot (not used in on Duet)
 void WiFiInterface::ResetWiFiForUpload(bool external) noexcept
 {
+#if WIFI_USES_SOFTWARE_UART
+	wifiSoftwareUart.End();
+#endif
+#if !WIFI_USES_SOFTWARE_UART
 	if (serialRunning)
 	{
 		SERIAL_WIFI_DEVICE.end();
 		serialRunning = false;
 	}
+#endif
 
 #if !WIFI_USES_ESP32
 	// Make sure the ESP8266 is in the reset state
@@ -2541,6 +2811,10 @@ void WiFiInterface::ResetWiFiForUpload(bool external) noexcept
 	// Make sure it has time to reset - no idea how long it needs, but 50ms should be plenty
 	delay(50);
 
+#if WIFI_USES_SOFTWARE_UART
+	SetPinMode(EspUartTxPin, external ? INPUT_PULLUP : OUTPUT_HIGH);
+	SetPinMode(EspUartRxPin, INPUT_PULLUP);
+#else
 	if (external)
 	{
 #if !defined(DUET3MINI)
@@ -2555,6 +2829,7 @@ void WiFiInterface::ResetWiFiForUpload(bool external) noexcept
 		SetPinFunction(APIN_SerialWiFi_RXD, SerialWiFiPeriphMode);	// connect the pins to the UART
 #endif
 	}
+#endif
 
 #if !WIFI_USES_ESP32
 	// Release the reset on the ESP8266
@@ -2564,6 +2839,24 @@ void WiFiInterface::ResetWiFiForUpload(bool external) noexcept
 
 	// Take the ESP8266 out of power down
 	digitalWrite(EspEnablePin, true);
+}
+
+void WiFiInterface::BeginFirmwareUploadSerial(uint32_t baud) noexcept
+{
+#if WIFI_USES_SOFTWARE_UART
+	wifiSoftwareUart.Begin(baud);
+#else
+	SERIAL_WIFI_DEVICE.begin(baud);
+#endif
+}
+
+void WiFiInterface::EndFirmwareUploadSerial() noexcept
+{
+#if WIFI_USES_SOFTWARE_UART
+	wifiSoftwareUart.End();
+#else
+	SERIAL_WIFI_DEVICE.end();
+#endif
 }
 
 #endif	// HAS_WIFI_NETWORKING

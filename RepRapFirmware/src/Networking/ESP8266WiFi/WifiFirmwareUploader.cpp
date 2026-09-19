@@ -11,10 +11,13 @@
 
 #include "WiFiInterface.h"
 
-#include <Devices.h>
+#include <Stream.h>
 #include <Platform/Platform.h>
 #include <Platform/RepRap.h>
 #include <Storage/FileStore.h>
+#if defined(DA_VINCI_JR)
+# include <Hardware/SAM4E/LpcInterface.h>
+#endif
 
 constexpr uint32_t Esp32FlashModuleSize = 4 * 1024 * 1024;		// assume at least 4Mbytes flash
 
@@ -85,9 +88,13 @@ const char *_ecv_array const resultMessages[] =
 // Probably our UART ISR cannot receive bytes fast enough, perhaps because of the latency of the system tick ISR.
 // 460800b doesn't always manage to connect, but if it does then uploading appears to be reliable.
 // 230400b always manages to connect.
+#if WIFI_USES_SOFTWARE_UART
+static const uint32_t uploadBaudRates[] = { 9600, 74880, 115200 };
+#else
 static const uint32_t uploadBaudRates[] = { 230400, 115200, 74880, 9600 };
+#endif
 
-WifiFirmwareUploader::WifiFirmwareUploader(AsyncSerial& port, WiFiInterface& iface) noexcept
+WifiFirmwareUploader::WifiFirmwareUploader(Stream& port, WiFiInterface& iface) noexcept
 	: uploadPort(port), interface(iface), uploadFile(nullptr), state(UploadState::idle), espType(ESPType::unknown)
 {
 }
@@ -168,13 +175,6 @@ int WifiFirmwareUploader::ReadByte(uint8_t& data, bool slipDecode) noexcept
 	}
 	// invalid
 	return(-3);
-}
-
-// When we write a sync packet, there must be no gaps between most of the characters.
-// So use this function, which does a block write to the UART buffer in the latest CoreNG.
-void WifiFirmwareUploader::writePacketRaw(const uint8_t *_ecv_array buf, size_t len) noexcept
-{
-	uploadPort.write(buf, len);
 }
 
 // Write a byte to the serial port optionally SLIP encoding. Return the number of bytes actually written.
@@ -364,6 +364,9 @@ inline void WifiFirmwareUploader::writePacket(const uint8_t *_ecv_array data, si
 // 0xc0 and 0xdb replaced by the two-byte sequences {0xdb, 0xdc} and {0xdb, 0xdd} respectively.
 void WifiFirmwareUploader::writePacket(const uint8_t *_ecv_array hdr, size_t hdrLen, const uint8_t *_ecv_array data, size_t dataLen) noexcept
 {
+#if WIFI_USES_SOFTWARE_UART
+	TaskCriticalSectionLocker lock;
+#endif
 	WriteByteRaw(0xc0);				// send the packet start character
 	writePacket(hdr, hdrLen);		// send the header
 	writePacket(data, dataLen);		// send the data block
@@ -374,10 +377,16 @@ void WifiFirmwareUploader::writePacket(const uint8_t *_ecv_array hdr, size_t hdr
 // This is like writePacket except that it does a fast block write for both the header and the main data with no SLIP encoding. Used to send sync commands.
 void WifiFirmwareUploader::writePacketRaw(const uint8_t *_ecv_array hdr, size_t hdrLen, const uint8_t *_ecv_array data, size_t dataLen) noexcept
 {
-	WriteByteRaw(0xc0);				// send the packet start character
-	writePacketRaw(hdr, hdrLen);	// send the header
-	writePacketRaw(data, dataLen);	// send the data block in raw mode
-	WriteByteRaw(0xc0);				// send the packet end character
+	uint8_t packet[64];
+	pre(hdrLen + dataLen + 2 <= ARRAY_SIZE(packet));
+	size_t pos = 0;
+	packet[pos++] = 0xc0;
+	memcpy(packet + pos, hdr, hdrLen);
+	pos += hdrLen;
+	memcpy(packet + pos, data, dataLen);
+	pos += dataLen;
+	packet[pos++] = 0xc0;
+	uploadPort.write(packet, pos);
 }
 
 // Send a command to the attached device together with the supplied data, if any.
@@ -669,7 +678,7 @@ void WifiFirmwareUploader::Spin() noexcept
 				MessageF("Trying to connect at %u baud: ", baud);
 			}
 			interface.ResetWiFiForUpload(false);
-			uploadPort.begin(baud);
+			interface.BeginFirmwareUploadSerial(baud);
 			lastAttemptTime = lastResetTime = millis();
 			state = UploadState::connecting;
 		}
@@ -793,7 +802,10 @@ void WifiFirmwareUploader::Spin() noexcept
 
 	case UploadState::done:
 		uploadFile->Close();
-		uploadPort.end();					// disable the port, it has a high interrupt priority
+		interface.EndFirmwareUploadSerial();
+#if defined(DA_VINCI_JR)
+		LpcInterface::FirmwareUpdateFinished();
+#endif
 #if STM32
 		DeleteObject(blkBuf32);
 #endif
@@ -864,6 +876,9 @@ void WifiFirmwareUploader::SendUpdateFile(const char *_ecv_array file, uint32_t 
 #endif
 
 	// Stop the network
+#if defined(DA_VINCI_JR)
+	LpcInterface::PrepareForFirmwareUpdate();
+#endif
 	restartModeOnCompletion = interface.EnableState();
 	interface.Stop();
 

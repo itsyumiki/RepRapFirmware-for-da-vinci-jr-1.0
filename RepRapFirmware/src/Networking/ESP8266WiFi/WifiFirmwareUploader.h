@@ -13,12 +13,12 @@
 #if HAS_WIFI_NETWORKING
 
 class WiFiInterface;
-class AsyncSerial;
+class Stream;
 
 class WifiFirmwareUploader
 {
 public:
-	WifiFirmwareUploader(AsyncSerial& port, WiFiInterface &iface) noexcept;
+	WifiFirmwareUploader(Stream& port, WiFiInterface &iface) noexcept;
 	bool IsReady() const noexcept;
 	void SendUpdateFile(const char *_ecv_array file, uint32_t address) noexcept;
 	void Spin() noexcept;
@@ -95,7 +95,6 @@ private:
 	void flushInput() noexcept;
 	EspUploadResult readPacket(uint8_t op, uint32_t *_ecv_null valp, size_t& bodyLen, uint32_t *_ecv_null status, uint32_t msTimeout) noexcept;
 	void writePacket(const uint8_t *_ecv_array data, size_t len) noexcept;
-	void writePacketRaw(const uint8_t *_ecv_array buf, size_t len) noexcept;
 	void writePacket(const uint8_t *_ecv_array hdr, size_t hdrLen, const uint8_t *_ecv_array data, size_t dataLen) noexcept;
 	void writePacketRaw(const uint8_t *_ecv_array hdr, size_t hdrLen, const uint8_t *_ecv_array data, size_t dataLen) noexcept;
 	void sendCommand(uint8_t op, uint32_t checkVal, const uint8_t *_ecv_array data, size_t dataLen) noexcept;
@@ -110,7 +109,7 @@ private:
 	EspUploadResult DoErase(uint32_t address, uint32_t size) noexcept;
 	void Identify() noexcept;
 
-	AsyncSerial& uploadPort;
+	Stream& uploadPort;
 	WiFiInterface& interface;
 	FileStore *_ecv_null uploadFile;
 	FilePosition fileSize;

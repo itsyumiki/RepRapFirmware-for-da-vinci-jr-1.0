@@ -307,6 +307,11 @@ static uint32_t checkCalls = 0, clearCalls = 0;		//TEMP DEBUG
 // Currently, the status for all filament monitors (on expansion boards as well as on the main board) is checked by the main board, which generates any necessary events.
 /*static*/ void FilamentMonitor::Spin() noexcept
 {
+	if (reprap.GetGCodes().IsFlashing())
+	{
+		return;
+	}
+
 #if SUPPORT_REMOTE_COMMANDS
 	CanMessageBuffer buf;
 	auto msg = buf.SetupRequestMessageNoRid<CanMessageFilamentMonitorsStatusNew2>(CanInterface::GetCanAddress(), CanInterface::GetCurrentMasterAddress());
