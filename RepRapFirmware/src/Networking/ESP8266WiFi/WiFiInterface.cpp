@@ -110,8 +110,6 @@ private:
 		{
 			return;
 		}
-		DisablePinInterrupt(EspUartRxPin);
-
 		uint8_t data = 0;
 		uint32_t sampleTime = DelayCycles(GetCurrentCycles(), bitCycles + bitCycles/2);
 		for (unsigned int bit = 0; bit < 8; ++bit)
@@ -127,7 +125,6 @@ private:
 		{
 			(void)rxBuffer.PutItem(data);
 		}
-		EnablePinInterrupt(EspUartRxPin);
 	}
 
 	void WriteByte(uint8_t data) noexcept
