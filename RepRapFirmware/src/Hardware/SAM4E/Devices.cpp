@@ -17,14 +17,13 @@
 class WiFiSoftwareUart final : public Stream
 {
 public:
+	WiFiSoftwareUart() noexcept
+	{
+		rxBuffer.Init(64);
+	}
+
 	void Begin(uint32_t baud) noexcept
 	{
-		End();
-		if (!bufferInitialised)
-		{
-			rxBuffer.Init(64);
-			bufferInitialised = true;
-		}
 		rxBuffer.Clear();
 		bitCycles = (SystemCoreClockFreq + baud/2) / baud;
 		enabled = true;
@@ -136,7 +135,6 @@ private:
 
 	RingBuffer<uint8_t> rxBuffer;
 	uint32_t bitCycles = 0;
-	bool bufferInitialised = false;
 	bool enabled = false;
 };
 
