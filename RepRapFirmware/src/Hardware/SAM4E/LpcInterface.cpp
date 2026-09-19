@@ -251,7 +251,6 @@ void PrepareForFirmwareUpdate() noexcept
 	Send(LpcProtocol::MessageType::configurationReset, nullptr, 0);
 	lpcUart.flush();
 	firmwareUpdateActive = true;
-	SetOffline();
 	LpcProtocol::Reset(decoder);
 	lpcUart.ClearReceiveBuffer();
 }
@@ -262,8 +261,8 @@ void FirmwareUpdateFinished() noexcept
 	SetOffline();
 	LpcProtocol::Reset(decoder);
 	lpcUart.ClearReceiveBuffer();
-	lastPingSent = millis();
 	firmwareUpdateActive = false;
+	SendPing();
 }
 
 void Spin() noexcept
@@ -294,11 +293,11 @@ void Spin() noexcept
 	}
 
 	const uint32_t now = millis();
-	if (online && now - lastPongReceived >= 3000)
+	if (!firmwareUpdateActive && online && now - lastPongReceived >= 3000)
 	{
 		SetOffline();
 	}
-	if (now - lastPingSent >= 1000)
+	if (!firmwareUpdateActive && now - lastPingSent >= 1000)
 	{
 		SendPing();
 	}
@@ -536,7 +535,7 @@ void ConfigureHeaterFeedForward(float fanPwm, float extrusionPwmBoost, float ext
 bool GetThermalStatus(ThermalStatus& status) noexcept
 {
 	TaskCriticalSectionLocker lock;
-	if (!online || !thermalStatusReceived || millis() - thermalStatusReceivedAt >= 1000)
+	if (!online || !thermalStatusReceived || (!firmwareUpdateActive && millis() - thermalStatusReceivedAt >= 1000))
 	{
 		return false;
 	}
