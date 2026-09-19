@@ -2475,8 +2475,11 @@ int32_t WiFiInterface::SendCommand(NetworkCommand cmd, SocketNumber socketNum, u
 				debugPrintf("ResponseTimeout, pending=%d\n", (int)transferPending);
 			}
 			transferPending = false;
+			digitalWrite(SamTfrReadyPin, false);
+			espWaitingTask = nullptr;
 #if WIFI_USES_GPIO_CS
 			DeselectSpiSlave();
+			DisableSpi();
 #endif
 			spi_dma_disable();
 			++responseTimeoutCount;
