@@ -56,7 +56,11 @@
 #define SD_MMC_ENABLE
 
 #define SD_MMC_HSMCI_MEM_CNT		1			// Number of HSMCI card slots supported
-#define SD_MMC_HSMCI_SLOT_0_SIZE	4			// HSMCI bus width
+#if defined(DA_VINCI_JR)
+# define SD_MMC_HSMCI_SLOT_0_SIZE	1			// HSMCI bus width
+#else
+# define SD_MMC_HSMCI_SLOT_0_SIZE	4			// HSMCI bus width
+#endif
 
 #if defined(PCCB) || defined(DA_VINCI_JR)
 # define SD_MMC_SPI_MEM_CNT			0			// Number of SPI card slots supported

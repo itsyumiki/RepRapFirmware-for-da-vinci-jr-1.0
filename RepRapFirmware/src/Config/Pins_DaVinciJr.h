@@ -19,7 +19,10 @@ constexpr uint32_t IAP_IMAGE_START = 0x20018000;
 
 // Only the SAM4E-connected hardware mapped for this board is enabled here.
 #define HAS_LWIP_NETWORKING     0
-#define HAS_WIFI_NETWORKING     0
+#define HAS_WIFI_NETWORKING     1
+#define WIFI_USES_SOFTWARE_UART 1
+#define WIFI_USES_GPIO_CS       1
+#define WIFI_FIRMWARE_FILE      "DuetWiFiServer.bin"
 #define HAS_W5500_NETWORKING    0
 #define HAS_SBC_INTERFACE       0
 #define HAS_MASS_STORAGE        1
@@ -84,6 +87,36 @@ constexpr GpioPinFunction LpcUartPinFunction = GpioPinFunction::C;
 constexpr Pin LpcIspPin = PortCPin(13);
 constexpr Pin LpcResetPin = PortCPin(15);
 
+// ESP-12 wiring. The ESP is the SPI master. PB02 is used as a GPIO chip-select
+// signal because SAM4E slave mode only accepts NPCS0 on PA11 as hardware NSS.
+// PA11 is shared with the unused on-board SPI flash; Devices.cpp parks that
+// flash before WiFi starts, then the WiFi transport synthesizes the NPCS0
+// edges required by SAM4E slave mode while PB02 frames the real ESP transfer.
+#define ESP_SPI                 SPI
+#define ESP_SPI_INTERFACE_ID    ID_SPI
+
+const uint32_t DMA_HW_ID_SPI_TX = 1;
+const uint32_t DMA_HW_ID_SPI_RX = 2;
+
+constexpr Pin APIN_ESP_SPI_MOSI = PortAPin(13);
+constexpr Pin APIN_ESP_SPI_MISO = PortAPin(12);
+constexpr Pin APIN_ESP_SPI_SCK = PortAPin(14);
+constexpr Pin APIN_ESP_SPI_SS0 = PortAPin(11);
+constexpr GpioPinFunction SPIPeriphMode = GpioPinFunction::A;
+
+constexpr Pin EspResetPin = PortAPin(26);
+constexpr Pin EspEnablePin = PortEPin(3);
+constexpr Pin EspDataReadyPin = PortDPin(24);
+constexpr Pin SamTfrReadyPin = PortBPin(14);
+constexpr Pin SamCsPin = PortBPin(2);
+constexpr IRQn SamCsIRQn = PIOB_IRQn;
+constexpr Pin EspUartTxPin = PortCPin(24);       // SAM TX -> ESP RXD0
+constexpr Pin EspUartRxPin = PortDPin(29);       // SAM RX <- ESP TXD0
+constexpr IRQn EspUartRxIRQn = PIOD_IRQn;
+
+constexpr DmaChannel DmacChanWiFiTx = 1;
+constexpr DmaChannel DmacChanWiFiRx = 2;
+
 // X, Y, Z, E1 motor wiring. The TB62269 ENABLE inputs are active high.
 constexpr Pin DriverEnablePins[NumDirectDrivers] = {
 	PortDPin(3), PortDPin(5), PortDPin(6), PortDPin(16)
@@ -105,7 +138,8 @@ constexpr float DefaultThermistorSeriesR = 4700.0;
 constexpr Pin DiagPin = NoPin;
 constexpr bool DiagOnPolarity = true;
 
-// SD card: HSMCI four-bit bus on PA26..PA31, card detect on PA25.
+// SD card: HSMCI one-bit bus on PA28..PA30, card detect on PA25.
+// PA26 is reserved for ESP reset by the documented ESP-12 wiring.
 constexpr size_t NumSdCards = 1;
 constexpr Pin SdCardDetectPins[NumSdCards] = { PortAPin(25) };
 // The socket grounds CD when no card is inserted; with the pull-up enabled,
@@ -116,9 +150,7 @@ constexpr Pin SdSpiCSPins[1] = { NoPin };
 constexpr IRQn SdhcIRQn = HSMCI_IRQn;
 constexpr uint32_t ExpectedSdCardSpeed = 20000000;
 constexpr Pin HsmciClockPin = PortAPin(29);
-constexpr Pin HsmciOtherPins[] = {
-	PortAPin(28), PortAPin(30), PortAPin(31), PortAPin(26), PortAPin(27)
-};
+constexpr Pin HsmciOtherPins[] = { PortAPin(28), PortAPin(30) };
 constexpr GpioPinFunction HsmciPinsFunction = GpioPinFunction::C;
 // Step pulse timer. All four step pins are on PIOC.
 #define STEP_TC          (TC0)
@@ -148,10 +180,10 @@ constexpr PinDescription PinTable[] =
 	PIN_NONE,		// PA08
 	PIN_NONE,		// PA09
 	PIN_NONE,		// PA10
-	PIN_NONE,		// PA11
-	PIN_NONE,		// PA12
-	PIN_NONE,		// PA13
-	PIN_NONE,		// PA14
+	PIN_NONE,		// PA11 SPI NPCS0 / on-board flash CS
+	PIN_NONE,		// PA12 ESP SPI MISO / on-board flash SO
+	PIN_NONE,		// PA13 ESP SPI MOSI / on-board flash SI
+	PIN_NONE,		// PA14 ESP SPI SCK / on-board flash SCLK
 	PIN_NONE,		// PA15
 	PIN_NONE,		// PA16
 	PIN_READ("!button.enter"),	// PA17 SW5 Enter button, active low
@@ -163,17 +195,17 @@ constexpr PinDescription PinTable[] =
 	PIN_NONE,		// PA23
 	PIN_NONE,		// PA24
 	PIN_NONE,		// PA25 SD card detect
-	PIN_NONE,		// PA26 SD DAT2
-	PIN_NONE,		// PA27 SD DAT3
+	PIN_NONE,		// PA26 ESP reset (SD DAT2 unused in 1-bit mode)
+	PIN_NONE,		// PA27 SD DAT3 (unused in 1-bit mode)
 	PIN_NONE,		// PA28 SD CMD
 	PIN_NONE,		// PA29 SD CLK
 	PIN_NONE,		// PA30 SD DAT0
-	PIN_NONE,		// PA31 SD DAT1
+	PIN_NONE,		// PA31 SD DAT1 (unused in 1-bit mode)
 
 	// Port B
 	PIN_NONE,		// PB00
 	PIN_NONE,		// PB01
-	PIN_NONE,		// PB02
+	PIN_NONE,		// PB02 ESP SPI CS (GPIO interrupt)
 	PIN_READ("!button.left"),	// PB03 SW4 Left button, active low
 	PIN_NONE,		// PB04
 	PIN_NONE,		// PB05
@@ -185,7 +217,7 @@ constexpr PinDescription PinTable[] =
 	PIN_NONE,		// PB11
 	PIN_NONE,		// PB12
 	PIN_NONE,		// PB13
-	PIN_NONE,		// PB14
+	PIN_NONE,		// PB14 ESP transfer ready
 	PIN_NONE,		// PB15
 	PIN_NONE,		// PB16
 	PIN_NONE,		// PB17
@@ -229,7 +261,7 @@ constexpr PinDescription PinTable[] =
 	PIN_NONE,		// PC21
 	PIN_NONE,		// PC22 Y step
 	PIN_NONE,		// PC23 X step
-	PIN_NONE,		// PC24
+	PIN_NONE,		// PC24 SAM software UART TX -> ESP RXD0
 	PIN_NONE,		// PC25
 	PIN_NONE,		// PC26
 	PIN_NONE,		// PC27
@@ -263,12 +295,12 @@ constexpr PinDescription PinTable[] =
 	PIN_NONE,		// PD21
 	PIN_NONE,		// PD22
 	PIN_WRITE("toplamp"),	// PD23 Top lamp
-	PIN_NONE,		// PD24
+	PIN_NONE,		// PD24 ESP data ready
 	PIN_NONE,		// PD25
 	PIN_NONE,		// PD26
 	PIN_NONE,		// PD27
 	PIN_NONE,		// PD28
-	PIN_NONE,		// PD29
+	PIN_NONE,		// PD29 SAM software UART RX <- ESP TXD0
 	PIN_READ("!button.home"),	// PD30 SW6 Home button, active low
 	PIN_NONE,		// PD31
 
@@ -276,7 +308,7 @@ constexpr PinDescription PinTable[] =
 	PIN_NONE,		// PE00
 	PIN_READ("!button.up"),	// PE01 SW1 Up button, active low
 	PIN_NONE,		// PE02 Y direction
-	PIN_NONE,		// PE03
+	PIN_NONE,		// PE03 ESP enable
 	PIN_READ("!button.right"),	// PE04 SW3 Right button, active low
 	PIN_NONE,		// PE05
 

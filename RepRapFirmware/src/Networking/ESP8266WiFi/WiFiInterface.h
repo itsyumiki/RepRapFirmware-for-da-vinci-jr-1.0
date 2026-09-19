@@ -49,6 +49,7 @@ class WiFiInterface : public NetworkInterface
 {
 public:
 	friend class WiFiSocket;
+	friend class WifiFirmwareUploader;
 
 	explicit WiFiInterface(Platform& p) noexcept;
 
@@ -114,6 +115,8 @@ private:
 	NetworkProtocol GetProtocolByLocalPort(TcpPort port) const noexcept;
 
 	void SetupSpi() noexcept;
+	void BeginFirmwareUploadSerial(uint32_t baud) noexcept;
+	void EndFirmwareUploadSerial() noexcept;
 
 	int32_t SendCommand(NetworkCommand cmd, SocketNumber socket, uint8_t flags, uint32_t param32, const void *_ecv_null dataOut, size_t dataOutLength, void *_ecv_null dataIn, size_t dataInLength) noexcept;
 
@@ -124,7 +127,7 @@ private:
 
 	void SendListenCommand(TcpPort port, NetworkProtocol protocol, unsigned int maxConnections) noexcept;
 	void SendConnectCommand(TcpPort port, NetworkProtocol protocol, uint32_t ip) noexcept;
-	void GetNewStatus() noexcept;
+	bool GetNewStatus(bool reportTransportFailure = true) noexcept;
 	void spi_slave_dma_setup(uint32_t dataOutSize, uint32_t dataInSize) noexcept;
 
 	int32_t SendCredential(size_t credIndex, const uint8_t *_ecv_array buffer, size_t bufferSize) noexcept;
