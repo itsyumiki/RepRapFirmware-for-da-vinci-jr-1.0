@@ -79,13 +79,7 @@ public:
 
 	size_t write(uint8_t data) noexcept override
 	{
-		if (!enabled)
-		{
-			return 0;
-		}
-		AtomicCriticalSectionLocker lock;
-		WriteByte(data);
-		return 1;
+		return write(&data, 1);
 	}
 
 	size_t write(const uint8_t *_ecv_array data, size_t length) noexcept override
