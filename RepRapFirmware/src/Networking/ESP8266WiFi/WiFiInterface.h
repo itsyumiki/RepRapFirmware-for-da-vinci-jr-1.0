@@ -127,7 +127,7 @@ private:
 
 	void SendListenCommand(TcpPort port, NetworkProtocol protocol, unsigned int maxConnections) noexcept;
 	void SendConnectCommand(TcpPort port, NetworkProtocol protocol, uint32_t ip) noexcept;
-	void GetNewStatus() noexcept;
+	bool GetNewStatus(bool reportTransportFailure = true) noexcept;
 	void spi_slave_dma_setup(uint32_t dataOutSize, uint32_t dataInSize) noexcept;
 
 	int32_t SendCredential(size_t credIndex, const uint8_t *_ecv_array buffer, size_t bufferSize) noexcept;

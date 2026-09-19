@@ -242,6 +242,10 @@ const uint32_t WiFiStableMillis = 500;					// Spin() fails in state starting2 wh
 const uint32_t WiFiStableMillis = 100;
 #endif
 
+#if defined(DA_VINCI_JR)
+const uint32_t WiFiModeStatusFallbackMillis = 5000;
+#endif
+
 const unsigned int MaxHttpConnections = 4;
 
 #if SAME5x
@@ -964,6 +968,9 @@ void WiFiInterface::Spin() noexcept
 
 			if (rslt >= 0)
 			{
+#if defined(DA_VINCI_JR)
+				lastTickMillis = millis();
+#endif
 				SetState(NetworkState::changingMode);
 			}
 			else
@@ -1037,10 +1044,22 @@ void WiFiInterface::Spin() noexcept
 
 	case NetworkState::changingMode:
 		// Here when we have asked the ESP to change mode. Don't leave this state until we have a new status report from the ESP.
-		if (espStatusChanged && digitalRead(EspDataReadyPin))
 		{
-			GetNewStatus();
-			switch (currentMode)
+			bool haveNewStatus = false;
+			if (espStatusChanged && digitalRead(EspDataReadyPin))
+			{
+				haveNewStatus = GetNewStatus();
+			}
+#if defined(DA_VINCI_JR)
+			else if (millis() - lastTickMillis >= WiFiModeStatusFallbackMillis)
+			{
+				lastTickMillis = millis();
+				haveNewStatus = GetNewStatus(false);
+			}
+#endif
+			if (haveNewStatus)
+			{
+				switch (currentMode)
 			{
 			case WiFiState::connecting:
 			case WiFiState::reconnecting:
@@ -1076,6 +1095,7 @@ void WiFiInterface::Spin() noexcept
 				SetState(NetworkState::idle);
 				platform.MessageF(NetworkInfoMessage, "WiFi module is %s\n", TranslateWiFiState(currentMode));
 				break;
+				}
 			}
 		}
 		break;
@@ -2611,7 +2631,7 @@ void WiFiInterface::StopListening(TcpPort port) noexcept
 }
 
 // This is called when ESP is signalling to us that an error occurred or there was a state change
-void WiFiInterface::GetNewStatus() noexcept
+bool WiFiInterface::GetNewStatus(bool reportTransportFailure) noexcept
 {
 	struct MessageResponse
 	{
@@ -2626,12 +2646,17 @@ void WiFiInterface::GetNewStatus() noexcept
 	rcvr.Value().messageBuffer[ARRAY_UPB(rcvr.Value().messageBuffer)] = 0;
 	if (rslt < 0)
 	{
-		platform.MessageF(NetworkErrorMessage, "failed to retrieve WiFi status message: %s\n", TranslateWiFiResponse(rslt));
+		if (reportTransportFailure)
+		{
+			platform.MessageF(NetworkErrorMessage, "failed to retrieve WiFi status message: %s\n", TranslateWiFiResponse(rslt));
+		}
+		return false;
 	}
-	else if (rslt > 0 && rcvr.Value().messageBuffer[0] != 0)
+	if (rslt > 0 && rcvr.Value().messageBuffer[0] != 0)
 	{
 		platform.MessageF(NetworkErrorMessage, "WiFi module reported: %s\n", rcvr.Value().messageBuffer);
 	}
+	return true;
 }
 
 /*static*/ const char *_ecv_array WiFiInterface::TranslateWiFiResponse(int32_t response) noexcept
