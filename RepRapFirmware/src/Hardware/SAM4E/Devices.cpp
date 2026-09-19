@@ -80,21 +80,10 @@ public:
 			return 0;
 		}
 
-		if (length <= 64)
+		AtomicCriticalSectionLocker lock;
+		for (size_t i = 0; i < length; ++i)
 		{
-			AtomicCriticalSectionLocker lock;
-			for (size_t i = 0; i < length; ++i)
-			{
-				WriteByte(data[i]);
-			}
-		}
-		else
-		{
-			for (size_t i = 0; i < length; ++i)
-			{
-				AtomicCriticalSectionLocker lock;
-				WriteByte(data[i]);
-			}
+			WriteByte(data[i]);
 		}
 		return length;
 	}
