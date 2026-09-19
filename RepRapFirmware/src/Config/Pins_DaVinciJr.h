@@ -139,7 +139,7 @@ constexpr PinDescription PinTable[] =
 	// Port A
 	PIN_NONE,		// PA00
 	PIN_NONE,		// PA01
-	PIN_NONE,		// PA02
+	{ TcOutput::none, PwmOutput::pwm0h2_a, AdcInput::none, PinCapability::wpwm, "buzzer" },	// PA02 BZ1 PWMH2
 	PIN_NONE,		// PA03
 	PIN_NONE,		// PA04
 	PIN_NONE,		// PA05
