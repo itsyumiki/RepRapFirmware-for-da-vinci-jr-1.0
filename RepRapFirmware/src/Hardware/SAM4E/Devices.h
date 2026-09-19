@@ -10,20 +10,12 @@
 
 #include <AsyncSerial.h>
 
-class Stream;
-
 extern AsyncSerial lpcUart;
 
 #define SUPPORT_USB		1		// needed by SerialCDC.h
 #include <SerialCDC.h>
 
 extern SerialCDC serialUSB;
-
-#if defined(DA_VINCI_JR)
-Stream& GetWiFiUploadSerial() noexcept;
-void BeginWiFiUploadSerial(uint32_t baud) noexcept;
-void EndWiFiUploadSerial() noexcept;
-#endif
 
 void DeviceInit() noexcept;
 void StopAnalogTask() noexcept;
