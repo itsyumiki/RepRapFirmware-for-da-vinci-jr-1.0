@@ -339,6 +339,9 @@ void SERIAL_WIFI_ISR3() noexcept
 #endif
 
 static volatile bool transferPending = false;
+#if defined(DA_VINCI_JR)
+static volatile uint32_t espStatusIrqCount;
+#endif
 static WiFiInterface *wifiInterface;
 
 #if 0
@@ -369,6 +372,9 @@ static void debugPrintBuffer(const char *msg, void *buf, size_t dataLength) noex
 
 static void EspTransferRequestIsr(CallbackParameter) noexcept
 {
+#if defined(DA_VINCI_JR)
+	++espStatusIrqCount;
+#endif
 	wifiInterface->EspRequestsTransfer();
 }
 
@@ -1143,7 +1149,24 @@ void WiFiInterface::Diagnostics(const StringRef& reply) noexcept
 					 transferAlreadyPendingCount, readyTimeoutCount, responseTimeoutCount
 			   );
 
-	if (GetState() != NetworkState::disabled && GetState() != NetworkState::starting1 && GetState() != NetworkState::starting2)
+#if defined(DA_VINCI_JR)
+	{
+		Pio * const pio = GpioPort(EspDataReadyPin);
+		const uint32_t mask = GpioMask(EspDataReadyPin);
+		reply.lcatf("ESP status IRQs: %" PRIu32 ", pin %u, mask %u, NVIC %u, priority %u",
+				espStatusIrqCount,
+				digitalRead(EspDataReadyPin) ? 1u : 0u,
+				(pio->PIO_IMR & mask) != 0 ? 1u : 0u,
+				(unsigned int)NVIC_GetEnableIRQ(EspDataReadyIRQn),
+				(unsigned int)NVIC_GetPriority(EspDataReadyIRQn));
+	}
+#endif
+
+	if (GetState() != NetworkState::disabled && GetState() != NetworkState::starting1 && GetState() != NetworkState::starting2
+#if defined(DA_VINCI_JR)
+		&& GetState() != NetworkState::changingMode
+#endif
+	   )
 	{
 		Receiver<NetworkStatusResponse> status;
 		status.Value().clockReg = 0xFFFFFFFF;				// older WiFi firmware doesn't return this value, so preset it
