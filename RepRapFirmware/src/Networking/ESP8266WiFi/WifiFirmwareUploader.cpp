@@ -89,7 +89,7 @@ const char *_ecv_array const resultMessages[] =
 // 460800b doesn't always manage to connect, but if it does then uploading appears to be reliable.
 // 230400b always manages to connect.
 #if WIFI_USES_SOFTWARE_UART
-static const uint32_t uploadBaudRates[] = { 74880, 115200, 9600 };
+static const uint32_t uploadBaudRates[] = { 9600, 74880, 115200 };
 #else
 static const uint32_t uploadBaudRates[] = { 230400, 115200, 74880, 9600 };
 #endif
