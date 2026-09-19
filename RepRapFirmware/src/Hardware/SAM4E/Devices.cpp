@@ -96,6 +96,7 @@ private:
 
 	void ReceiveByte() noexcept
 	{
+		AtomicCriticalSectionLocker lock;
 		if (!enabled || digitalRead(EspUartRxPin))
 		{
 			return;
