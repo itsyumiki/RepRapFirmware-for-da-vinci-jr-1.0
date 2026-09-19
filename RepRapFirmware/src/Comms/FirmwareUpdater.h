@@ -20,11 +20,12 @@ namespace FirmwareUpdater
 		Sbc = 2,				 // Module 2 used to be the DWC binary file, now it is used to update SBC firmware
 #if defined(DA_VINCI_JR)
 		LpcFirmwareModule = 3,
-#elif HAS_WIFI_NETWORKING
-		WifiExternalFirmwareModule = 3,
+#endif
+#if HAS_WIFI_NETWORKING
+		WifiExternalFirmwareModule = 4,
 #endif
 #if HAS_AUX_DEVICES
-		PanelDueFirmwareModule = 4,
+		PanelDueFirmwareModule = 5,
 #endif
 		NumUpdateModules
 	};
