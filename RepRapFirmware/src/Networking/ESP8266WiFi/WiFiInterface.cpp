@@ -2152,6 +2152,7 @@ void WiFiInterface::SetupSpi() noexcept
 
 #if WIFI_USES_GPIO_CS
 	AttachPinInterrupt(SamCsPin, EspChipSelectRiseIsr, InterruptMode::rising, CallbackParameter(nullptr));
+	NVIC_SetPriority(SamCsIRQn, NvicPrioritySpi);
 #endif
 
 	pmc_enable_periph_clk(ESP_SPI_INTERFACE_ID);
