@@ -9,11 +9,11 @@
 #include <RepRapFirmware.h>
 #include <AnalogIn.h>
 #include <AnalogOut.h>
+#if defined(DA_VINCI_JR) && HAS_WIFI_NETWORKING
 #include <Interrupts.h>
 #include <Stream.h>
 #include <General/RingBuffer.h>
 
-#if defined(DA_VINCI_JR) && HAS_WIFI_NETWORKING
 class WiFiSoftwareUart final : public Stream
 {
 public:
@@ -156,7 +156,6 @@ void EndWiFiUploadSerial() noexcept
 {
 	wifiSoftwareUart.End();
 }
-
 
 static void ParkSharedSpiFlash() noexcept
 {
