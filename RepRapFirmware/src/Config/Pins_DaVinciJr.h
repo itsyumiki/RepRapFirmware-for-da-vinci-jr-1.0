@@ -20,7 +20,7 @@ constexpr uint32_t IAP_IMAGE_START = 0x20018000;
 // Only the SAM4E-connected hardware mapped for this board is enabled here.
 #define HAS_LWIP_NETWORKING     0
 #define HAS_WIFI_NETWORKING     1
-#define WIFI_USES_UART          0
+#define WIFI_USES_HARDWARE_UART 0
 #define WIFI_USES_SOFTWARE_UART 1
 #define WIFI_USES_GPIO_CS       1
 #define WIFI_FIRMWARE_FILE      "DuetWiFiServer.bin"

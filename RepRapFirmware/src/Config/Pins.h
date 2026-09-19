@@ -159,8 +159,8 @@
 # if !defined(WIFI_USES_ESP32)
 #  define WIFI_USES_ESP32		0
 # endif
-# if !defined(WIFI_USES_UART)
-#  define WIFI_USES_UART		1
+# if !defined(WIFI_USES_HARDWARE_UART)
+#  define WIFI_USES_HARDWARE_UART		1
 # endif
 # if !defined(WIFI_USES_SOFTWARE_UART)
 #  define WIFI_USES_SOFTWARE_UART	0
