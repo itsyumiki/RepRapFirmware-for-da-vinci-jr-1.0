@@ -2,7 +2,7 @@
 
 M550 P"Da Vinci Jr 1.0"
 
-; On-board AC-1203D-RP buzzer on SAM4E PA2/PWMH2.
+; On-board buzzer on SAM4E PA2/PWMH2.
 M300 C"buzzer"
 
 ; Driver 0=X, 1=Y, 2=Z, 3=E1.
