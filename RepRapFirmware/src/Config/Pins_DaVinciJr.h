@@ -107,7 +107,6 @@ constexpr GpioPinFunction SPIPeriphMode = GpioPinFunction::A;
 constexpr Pin EspResetPin = PortAPin(26);
 constexpr Pin EspEnablePin = PortEPin(3);
 constexpr Pin EspDataReadyPin = PortDPin(24);
-constexpr IRQn EspDataReadyIRQn = PIOD_IRQn;
 constexpr Pin SamTfrReadyPin = PortBPin(14);
 constexpr Pin SamCsPin = PortBPin(2);
 constexpr IRQn SamCsIRQn = PIOB_IRQn;
