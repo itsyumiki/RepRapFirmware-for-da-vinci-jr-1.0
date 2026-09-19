@@ -1145,6 +1145,10 @@ const char *_ecv_array WiFiInterface::TranslateEspResetReason(uint32_t reason) n
 
 void WiFiInterface::Diagnostics(const StringRef& reply) noexcept
 {
+#if defined(DA_VINCI_JR)
+	const bool wasChangingMode = (GetState() == NetworkState::changingMode);
+#endif
+
 	reply.lcatf("=== WiFi ===\nInterface state: %s\n"
 				"Module is %s\n"
 				"Failed messages: pending %u, notrdy %u, noresp %u",
@@ -1166,11 +1170,7 @@ void WiFiInterface::Diagnostics(const StringRef& reply) noexcept
 	}
 #endif
 
-	if (GetState() != NetworkState::disabled && GetState() != NetworkState::starting1 && GetState() != NetworkState::starting2
-#if defined(DA_VINCI_JR)
-		&& GetState() != NetworkState::changingMode
-#endif
-	   )
+	if (GetState() != NetworkState::disabled && GetState() != NetworkState::starting1 && GetState() != NetworkState::starting2)
 	{
 		Receiver<NetworkStatusResponse> status;
 		status.Value().clockReg = 0xFFFFFFFF;				// older WiFi firmware doesn't return this value, so preset it
@@ -1203,9 +1203,14 @@ void WiFiInterface::Diagnostics(const StringRef& reply) noexcept
 			reply.lcatf("Clock register %08" PRIx32, r.clockReg);
 
 			// Print LwIP stats and other values over the ESP's UART line
-			if (SendCommand(NetworkCommand::diagnostics, 0, 0, 0, nullptr, 0, nullptr, 0) != ResponseEmpty)
+#if defined(DA_VINCI_JR)
+			if (!wasChangingMode)
+#endif
 			{
-				reply.lcatf("Failed to request ESP stats");
+				if (SendCommand(NetworkCommand::diagnostics, 0, 0, 0, nullptr, 0, nullptr, 0) != ResponseEmpty)
+				{
+					reply.lcatf("Failed to request ESP stats");
+				}
 			}
 		}
 		else
