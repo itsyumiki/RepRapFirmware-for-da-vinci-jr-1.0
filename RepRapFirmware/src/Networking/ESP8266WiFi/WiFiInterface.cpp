@@ -2652,7 +2652,8 @@ void WiFiInterface::ResetWiFiForUpload(bool external) noexcept
 	delay(50);
 
 #if WIFI_USES_SOFTWARE_UART
-	PrepareWiFiUploadSerial(external);
+	SetPinMode(EspUartTxPin, external ? INPUT_PULLUP : OUTPUT_HIGH);
+	SetPinMode(EspUartRxPin, INPUT_PULLUP);
 #elif WIFI_USES_UART
 	if (external)
 	{

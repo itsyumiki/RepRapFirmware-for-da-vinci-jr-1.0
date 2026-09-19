@@ -23,7 +23,6 @@ extern SerialCDC serialUSB;
 Stream& GetWiFiUploadSerial() noexcept;
 void BeginWiFiUploadSerial(uint32_t baud) noexcept;
 void EndWiFiUploadSerial() noexcept;
-void PrepareWiFiUploadSerial(bool external) noexcept;
 #endif
 
 void DeviceInit() noexcept;

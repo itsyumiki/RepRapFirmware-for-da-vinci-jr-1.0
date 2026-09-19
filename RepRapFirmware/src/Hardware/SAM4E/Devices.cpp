@@ -156,12 +156,6 @@ void EndWiFiUploadSerial() noexcept
 	wifiSoftwareUart.End();
 }
 
-void PrepareWiFiUploadSerial(bool external) noexcept
-{
-	wifiSoftwareUart.End();
-	SetPinMode(EspUartTxPin, external ? INPUT_PULLUP : OUTPUT_HIGH);
-	SetPinMode(EspUartRxPin, INPUT_PULLUP);
-}
 
 static void ParkSharedSpiFlash() noexcept
 {
