@@ -242,6 +242,10 @@ const uint32_t WiFiStableMillis = 500;					// Spin() fails in state starting2 wh
 const uint32_t WiFiStableMillis = 100;
 #endif
 
+#if defined(DA_VINCI_JR)
+const uint32_t WiFiModePollMillis = 250;
+#endif
+
 const unsigned int MaxHttpConnections = 4;
 
 #if SAME5x
@@ -954,6 +958,7 @@ void WiFiInterface::Spin() noexcept
 
 			if (rslt >= 0)
 			{
+				lastTickMillis = millis();
 				SetState(NetworkState::changingMode);
 			}
 			else
@@ -1027,9 +1032,16 @@ void WiFiInterface::Spin() noexcept
 
 	case NetworkState::changingMode:
 		// Here when we have asked the ESP to change mode. Don't leave this state until we have a new status report from the ESP.
-		if (espStatusChanged && digitalRead(EspDataReadyPin))
+		if (   espStatusChanged && digitalRead(EspDataReadyPin)
+#if defined(DA_VINCI_JR)
+			|| millis() - lastTickMillis >= WiFiModePollMillis
+#endif
+		   )
 		{
 			GetNewStatus();
+#if defined(DA_VINCI_JR)
+			lastTickMillis = millis();
+#endif
 			switch (currentMode)
 			{
 			case WiFiState::connecting:
