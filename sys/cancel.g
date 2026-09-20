@@ -2,3 +2,4 @@
 M568 P0 A0
 M106 P0 S0
 M106 P1 S0
+M98 P"0:/sys/park.g"
